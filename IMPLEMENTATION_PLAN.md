@@ -55,29 +55,28 @@ snowflake-arctic-l-v2) flushed out Snowflake as the clear winner.
 
 ---
 
-## Sprint 2 — Training data construction
+## Sprint 2 — Training data construction (in progress)
 
 **Goal**: produce a versioned training dataset and a held-out validation
-slice; document every decision.
+slice; document every decision. Design captured in
+`notes/training_data_design.md`.
 
-1. Verify the held-out 596 opinions are excluded from any training pool
-   we construct.
-2. Decide: include `question_synthetic` pairs? Run a small ablation on a
-   tiny pilot fine-tune to test.
-3. Build the base `(question, opinion_qa_text)` positive set.
-4. Mine hard negatives:
-   - BM25 top-k that aren't in any gold judgment for that "query".
-   - Same-statute-different-opinion (using `citations.government_code`).
-5. (Optional) Augment queries with LLM paraphrases in multiple registers
-   (formal sentence, keyword bag, fact pattern). Gate by an ablation.
-6. Carve a validation slice (~5% sampled stratified by year) for in-loop
-   feedback during training. Eval set remains untouched until the end.
+| Step | Status | Artifact |
+|---|---|---|
+| Held-out exclusion (624 eval-referenced opinions) | ✅ done | enforced inside the pair builder |
+| Pair file with 4 positive-doc columns + question_source marker | ✅ done | `data/training/pairs.jsonl` (10,806 rows, gitignored) |
+| Validation slice, 5% stratified by year, seed=20260521 | ✅ done | `data/training/val_slice.jsonl` (543 rows, gitignored) |
+| Hard-negative mining (BM25 top-k + same-statute) | ⏸️ pending | `data/training/hard_negatives.jsonl` (TBD) |
+| Design doc | ✅ done | `notes/training_data_design.md` |
+| Optional query augmentation (LLM paraphrases) | ⏸️ deferred to Sprint 3 ablation | — |
 
-Artifacts:
-- `data/training/pairs.jsonl`
-- `data/training/hard_negatives.jsonl`
-- `data/training/val_slice.jsonl`
-- `notes/training_data_design.md`
+The pair builder uses a strictly conservative held-out (all 624 judged
+opinions, including score=0) rather than the 596-positive-only count from
+the leakage report. Training distribution is naturally COI-heavy (56.5%) so
+no explicit topic oversampling is applied.
+
+**Next session pickup point**: implement `scripts/mine_hard_negatives.py`.
+See `notes/CONTINUATION.md` for the full handoff.
 
 ---
 

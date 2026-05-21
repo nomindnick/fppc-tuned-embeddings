@@ -1,120 +1,126 @@
-# Continuation — Resuming on Strix Halo
+# Continuation — Hard-Negative Mining (Sprint 2 final task)
 
-Snapshot of state when work was paused for hardware switch.
+Snapshot of state at session end on 2026-05-21. Sprint 2's last deliverable
+is the hard-negative miner; everything else in Sprint 2 is complete.
 
 ## Where we are
 
-- **Check 1 (leakage)** — ✅ complete. Report: `notes/check1_leakage_report.md`.
-  TL;DR: hold out 596 eval-referenced opinions (4.23% of corpus); training
-  on the rest is safe.
-- **Check 2 (open-model baselines)** — partial.
-  - ✅ OpenAI `text-embedding-3-small` replay → `results/check2_openai_baseline.json`
-    (nDCG@5 = 0.263, MRR = 0.494 — matches published 0.262 / 0.485 within noise).
-  - ✅ `BAAI/bge-base-en-v1.5` (max_seq=512) → `results/check2_bge-base-en-v1.5.json`
-    (nDCG@5 = 0.268, MRR = 0.478 — ≈ OpenAI parity).
-  - ⏸️ `nomic-ai/nomic-embed-text-v1.5` — killed mid-run; CPU on laptop took
-    ~5 min per 32-doc batch at max_seq=1024.
-  - ⏸️ `BAAI/bge-large-en-v1.5` — never started; deferred as a scale check.
+- **Sprint 0**: ✅ done. Leakage analysis and OpenAI/BGE baselines.
+- **Sprint 1**: ✅ done. Seven open-model baselines on Strix Halo.
+  Fine-tune target = **`Snowflake/snowflake-arctic-embed-l-v2.0`**
+  (1024d, native 8192-token context, `query: ` prefix only).
+  Untuned baseline: nDCG@5 = 0.296, MRR = 0.522. See
+  `notes/check2_open_baselines_report.md`.
+- **Sprint 2**: in progress.
+  - ✅ Held-out exclusion (624 opinions referenced by any eval judgment).
+  - ✅ `data/training/pairs.jsonl` — 10,806 rows. 4 positive-doc columns:
+    `pos_qa_text`, `pos_body`, `pos_qa_plus_body`, `pos_full_text`.
+    Schema documented in `notes/training_data_design.md`.
+  - ✅ `data/training/val_slice.jsonl` — 543 rows (5%), year-stratified,
+    seed = `20260521`.
+  - ⏸️ **`data/training/hard_negatives.jsonl` — to be built next.**
 
-## Why we paused
+## What's pending: hard-negative mining
 
-Laptop CPU runtime estimate for nomic at max_seq=1024 was ~2.5 hours. Strix
-Halo (Ryzen AI Max+ 395, 128GB unified) should run all remaining models in
-a fraction of that time — especially if PyTorch can hit the iGPU via ROCm.
+Implement `scripts/mine_hard_negatives.py` to produce one record per
+training-pool opinion (everything in `pairs.jsonl` minus `val_slice.jsonl`
+IDs), listing 5–10 hard-negative opinion IDs per positive.
 
-## What's in the repo to bring across
+### Two negative sources to combine
 
-Everything under `/home/<user>/Projects/fppc-tuned-embeddings/` except:
-- `.venv/` — recreate; environment is machine-specific.
-- `data/indexes/` — gitignored; bge-base embedding cache (~43 MB). Optional
-  to copy; will regenerate quickly on faster hardware if missing.
-- `logs_*.txt` — gitignored throwaway logs.
+1. **BM25 top-k** against the corpus, using the *training question* text as
+   the query. Reuse the search-lab BM25 engine at
+   `/home/nick/Projects/fppc-opinions-search-lab/src/engines/bm25_full_text.py`
+   — class `BM25FullText`, method `.search(query, top_k)`. This gives
+   negatives that look like real production retrieval candidates.
 
-The four sibling repos under `/home/<user>/Projects/` must also be present:
-- `fppc-opinions-corpus`
-- `fppc-opinions-eval`
-- `fppc-opinions-search-lab`
+2. **Same-statute different opinion** — any other corpus opinion whose
+   `citations.government_code` set overlaps with the positive's. These are
+   the hardest legal distractors (same statute, different facts/outcome).
 
-(The `fppc-opinions-app` repo isn't needed until Sprint 5.)
+### Exclusions from negative candidate pools
 
-## Resume steps on Strix Halo
+For each positive opinion, the negative pool MUST exclude:
 
-1. Confirm sibling repos exist at expected paths (see `CLAUDE.md`). If your
-   username differs, update path constants at the top of
-   `scripts/check2_open_baselines.py` (`EVAL_PATH`, `CORPUS_DIR`, and the
-   OpenAI index path inside `evaluate_openai_baseline_from_cached`).
+- The positive opinion itself.
+- All 624 held-out opinions (use the same `load_held_out()` logic as
+  `scripts/build_training_pairs.py`; the function derives the set directly
+  from `/home/nick/Projects/fppc-opinions-eval/eval/dataset.json`).
+- All val-slice opinion IDs (read from `data/training/val_slice.jsonl`).
 
-2. Create a fresh venv. The laptop used PyTorch CPU build; on Strix Halo
-   try ROCm wheels first since the Radeon 8060S iGPU should be supported:
+The first two exclusions are correctness-critical (eval leakage). The
+third prevents the trainer from seeing val opinions as negatives — mild
+leakage, but worth avoiding.
 
-   ```bash
-   cd /home/<user>/Projects/fppc-tuned-embeddings
-   python3 -m venv .venv
-   .venv/bin/pip install --upgrade pip
-   # Try ROCm wheel first (verify the index URL against current pytorch.org docs)
-   .venv/bin/pip install --index-url https://download.pytorch.org/whl/rocm6.2 torch
-   # Fall back to CPU wheel if ROCm install or device test fails:
-   #   .venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
-   .venv/bin/pip install sentence-transformers tiktoken einops openai python-dotenv
-   ```
+### Output schema (proposed)
 
-   Sanity check device:
-   ```bash
-   .venv/bin/python -c "import torch; print('cuda?', torch.cuda.is_available()); print('hip?', torch.version.hip)"
-   ```
+One JSON object per line, keyed by `opinion_id`:
 
-3. If ROCm is live, set the device used by sentence-transformers explicitly
-   inside `scripts/check2_open_baselines.py`. The script currently lets ST
-   choose, which should pick CUDA/ROCm automatically when present. If not,
-   pass `device="cuda"` (yes, even for ROCm — that's how PyTorch surfaces it)
-   to `SentenceTransformer(...)`.
+```json
+{
+  "opinion_id": "A-19-008",
+  "negatives": [
+    {"opinion_id": "16-117", "source": "bm25", "rank": 1, "score": 12.34},
+    {"opinion_id": "11-002", "source": "same_statute", "shared_codes": ["1090", "87100"]},
+    ...
+  ]
+}
+```
 
-4. Run nomic + bge-large:
+Target ~5 BM25 + ~3-5 same-statute, deduplicate by `opinion_id`. If the
+same opinion appears in both sources, keep both source markers in a single
+record (e.g., `"source": "bm25+same_statute"`).
 
-   ```bash
-   .venv/bin/python scripts/check2_open_baselines.py \
-     --models nomic-v1.5 bge-large --skip-openai
-   ```
+### Practical notes
 
-   Results land in `results/check2_<model>.json` and the comparison table
-   prints at the end.
+- **Cost**: BM25 over 14k docs is fast; the bottleneck will be the ~10k
+  queries (one per training-pool opinion). Reuse a single `BM25FullText`
+  instance and call `.search()` in a loop. Expect a few minutes total.
+- **Cache the same-statute graph**: build a `Dict[gov_code, set[opinion_id]]`
+  once from the corpus, then look up neighbors per positive. Don't walk the
+  corpus per query.
+- **No GPU needed** for this script. Don't bother with
+  `HSA_OVERRIDE_GFX_VERSION` — BM25 is CPU-only.
+- **Determinism**: BM25 ranking is deterministic given fixed index;
+  same-statute ordering should be sorted for reproducibility.
 
-5. Optionally re-run bge-base for a clean apples-to-apples on the same
-   hardware (the existing JSON was produced on laptop CPU — numbers should
-   be identical to within rounding because we're using deterministic
-   embedding, but the runtime stats won't match):
+### Possible gotchas
 
-   ```bash
-   .venv/bin/python scripts/check2_open_baselines.py --models bge-base --skip-openai
-   ```
+- The search-lab BM25 engine is built around `SearchEngine` protocol from
+  `src/engines/base.py`. May need a minimal corpus-loader shim to initialize
+  it. Inspect `src/engines/bm25_full_text.py` `__init__` first to see how
+  it loads the corpus.
+- The search-lab repo has its own `.venv/` and its imports might collide
+  with ours. Safer approach: `sys.path.insert(0, "/home/nick/Projects/fppc-opinions-search-lab")`
+  before importing, similar to what `scripts/check2_open_baselines.py`
+  does for the eval harness.
 
-6. Write `notes/check2_open_baselines_report.md` summarizing all four
-   models' overall metrics, per-topic breakdowns, and a final recommendation
-   on the fine-tune target. Update SPEC.md's "Target model" section to
-   reflect the choice with concrete numbers.
+## Hardware reminder
 
-7. Mark Task #3 ("Sprint 1: Finalize Check 2 on Strix Halo") complete and
-   move to Sprint 2 planning.
-
-## Open questions for the Strix Halo session
-
-- Does PyTorch's ROCm support work cleanly on this hardware for sentence-
-  transformers inference? If yes, training in Sprint 3 is also viable on the
-  same stack. If no, plan: do training data prep + small-model sanity runs
-  on Strix Halo CPU, rent an hour of A100 on Modal/RunPod for the actual
-  fine-tune sweeps.
-- Long-tail token lengths: the corpus has a few opinions >8K tokens. We've
-  capped nomic at 1024 for the baseline pass since p99 is 2296. If we want
-  to test nomic's long-context advantage more honestly, re-run with
-  max_seq_length=4096 on a 1–2% subset and see if it changes the topic
-  breakdown.
-- Whether to add a fourth baseline (e.g., `Snowflake/snowflake-arctic-embed-l-v2.0`
-  or `mxbai-embed-large-v1`) before Sprint 1 closes.
+Strix Halo (Framework Desktop). For any GPU work (not needed for the
+hard-negative miner specifically, but for everything downstream): prepend
+`HSA_OVERRIDE_GFX_VERSION=11.0.0` to GPU commands. See
+`memory/strix-halo-rocm.md` for the full explanation.
 
 ## Files to reference quickly
 
-- `scripts/check1_leakage.py` — leakage analyzer (re-runs in ~30s).
-- `scripts/check2_open_baselines.py` — embedding + eval pipeline.
-- `results/check2_comparison.json` — current short-form comparison table.
-- `notes/check1_leakage_report.md` — full leakage analysis writeup.
-- `CLAUDE.md`, `SPEC.md`, `IMPLEMENTATION_PLAN.md` — planning docs.
+- `scripts/build_training_pairs.py` — pair builder; reference for the
+  held-out loader and pair-file schema.
+- `scripts/build_val_slice.py` — val-slice carver; reference for reading
+  the JSONL and stratified sampling.
+- `notes/training_data_design.md` — Sprint 2 design decisions, schema,
+  hard-negative-section specifies the constraints listed above.
+- `data/training/pairs.jsonl` — input for the miner (gitignored; regenerate
+  with `scripts/build_training_pairs.py` if missing).
+- `data/training/val_slice.jsonl` — gives the val IDs to exclude.
+- `/home/nick/Projects/fppc-opinions-search-lab/src/engines/bm25_full_text.py`
+  — BM25 implementation to reuse.
+
+## Once hard-negative mining is done
+
+- Update `notes/training_data_design.md` with the actual coverage stats
+  (negatives per positive distribution, BM25 vs same-statute proportions,
+  topic distribution of negatives).
+- Mark Sprint 2 complete in `IMPLEMENTATION_PLAN.md`.
+- Review Sprint 3 plan in light of what we learned in Sprint 2 (any
+  surprises in the pair distribution that should shape the pilot ablations?).

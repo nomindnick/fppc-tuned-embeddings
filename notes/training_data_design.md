@@ -105,36 +105,69 @@ rows it affects.
 - `pos_qa_plus_body`: null whenever `pos_body` is null.
 - `pos_full_text`: always present.
 
-## Validation slice (carved separately)
+## Validation slice
 
-Sprint 3 needs an in-loop validation signal that isn't the test eval. The val
-slice will be carved from `pairs.jsonl` by a subsequent script
-(`scripts/build_val_slice.py`), targeting ~5% of pairs (~540 rows), stratified
-by year so we don't oversample either ancient or modern opinions. Stratification
-by topic is also worth considering since the corpus is heavily COI-weighted,
-but year is the cleaner first-pass stratifier and topic balance is roughly
-preserved within years.
+Built by `scripts/build_val_slice.py` from `pairs.jsonl`. Targets 5% of pairs
+(actual: **543 of 10,806 = 5.02%**), stratified by year (each year contributes
+`round(0.05 * year_count)` rows). Seed = `20260521` for reproducibility.
 
-The val-slice opinions are then excluded from the training pool — the trainer
-reads `pairs.jsonl` minus `val_slice.jsonl` IDs.
+The slice writes full-schema rows (same columns as `pairs.jsonl`), so the
+trainer can validate using the same positive-doc columns as it trains on. The
+trainer is expected to read `pairs.jsonl` and skip any `opinion_id` present
+in `val_slice.jsonl`.
 
-## Hard negatives (carved separately)
+Distribution check vs population (largest deltas):
 
-The negatives file (`data/training/hard_negatives.jsonl`) will be built by a
-separate script. For each `opinion_id` in the training pool we mine two
-sources of hard negatives:
+| Field | Val % | Pop % | Δ |
+|---|---:|---:|---:|
+| question_source = real | 88.95 | 89.00 | -0.05 |
+| question_source = synthetic | 11.05 | 11.00 | +0.05 |
+| body_complete = True | 68.88 | 68.54 | +0.34 |
+| topic = conflicts_of_interest | 59.48 | 56.49 | +2.99 |
+| topic = campaign_finance | 15.47 | 18.50 | -3.03 |
+| topic = (unclassified) | 11.23 | 11.18 | +0.05 |
 
-1. **BM25 top-k** against the corpus, taking the top results that are *not*
-   the positive opinion. We use the search-lab's BM25 implementation
-   (same index code as Experiment 009) so the negatives reflect what the
-   production retriever surfaces.
+Largest deviation is campaign_finance underrepresentation (~3pp), which is
+sampling noise at n=543 and not a stratification failure. COI is slightly
+over-represented (+3pp), which is fine since COI is the explicit subgroup
+gate. We did not stratify on topic because year-stratification preserves
+topic balance closely enough and adds no implementation complexity.
+
+Coverage report: `data/training/val_slice_coverage.json`.
+
+## Hard negatives (pending — Sprint 2 final task)
+
+The negatives file (`data/training/hard_negatives.jsonl`) will be built by
+`scripts/mine_hard_negatives.py` (not yet implemented). For each `opinion_id`
+in the training pool we mine two sources of hard negatives:
+
+1. **BM25 top-k** against the corpus, querying with the *training question*
+   text. Take the top-k results that are *not* the positive opinion. Use the
+   search-lab's BM25 engine
+   (`/home/nick/Projects/fppc-opinions-search-lab/src/engines/bm25_full_text.py`
+   — class `BM25FullText`, method `.search(query, top_k)`) so the negatives
+   reflect what the production retriever surfaces. Reusing this code also
+   guarantees the held-out opinions are excluded only by *our* filter, not by
+   different indexing logic.
 2. **Same-statute different opinion**: any other corpus opinion whose
    `citations.government_code` set overlaps with the positive's. These are
    "topically similar but factually distinct" — the hardest kind of legal
    distractor.
 
-Output format keyed by `opinion_id` so the trainer can join on the fly. We
-target ~5–10 negatives per positive.
+Constraints:
+- **Held-out opinions must be filtered out** of every negative candidate
+  list. Use the same `load_held_out()` logic as `build_training_pairs.py`
+  (derive from `eval/dataset.json`).
+- **Val-slice opinions must also be filtered out** of negative candidate
+  lists for training pairs — otherwise the model sees val opinions as
+  negatives at train time, which is mild leakage. Read `val_slice.jsonl`,
+  collect its `opinion_id`s, exclude them.
+- **Target ~5–10 hard negatives per positive**, ideally a mix of both
+  sources (e.g., top-5 BM25 + 3-5 same-statute, deduplicated).
+
+Output format: one line per training opinion, keyed by `opinion_id`, with
+the negative `opinion_id`s and their source(s). The trainer joins this with
+`pairs.jsonl` on the fly.
 
 ## Coverage report (current run)
 
@@ -203,8 +236,16 @@ that's <1% of pairs and acceptable.
 
 ## Artifacts produced this sprint
 
-- `data/training/pairs.jsonl` (gitignored, ~285 MB)
-- `data/training/pairs_coverage.json` (committed; small)
-- `scripts/build_training_pairs.py` — regenerates pairs deterministically
-  from the corpus and eval dataset.
+- `data/training/pairs.jsonl` (gitignored, ~285 MB) — 10,806 rows.
+- `data/training/pairs_coverage.json` (gitignored; small) — counts and length
+  stats.
+- `data/training/val_slice.jsonl` (gitignored) — 543 rows.
+- `data/training/val_slice_coverage.json` (gitignored) — distribution-vs-pop
+  check.
+- `data/training/hard_negatives.jsonl` (pending; gitignored).
+- `scripts/build_training_pairs.py` — regenerates `pairs.jsonl`
+  deterministically from corpus + eval dataset.
+- `scripts/build_val_slice.py` — regenerates `val_slice.jsonl`
+  deterministically (seed = 20260521).
+- `scripts/mine_hard_negatives.py` — pending.
 - This document.
