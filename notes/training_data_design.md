@@ -135,39 +135,117 @@ topic balance closely enough and adds no implementation complexity.
 
 Coverage report: `data/training/val_slice_coverage.json`.
 
-## Hard negatives (pending — Sprint 2 final task)
+## Hard negatives
 
-The negatives file (`data/training/hard_negatives.jsonl`) will be built by
-`scripts/mine_hard_negatives.py` (not yet implemented). For each `opinion_id`
-in the training pool we mine two sources of hard negatives:
+Built by `scripts/mine_hard_negatives.py`. For each `opinion_id` in the
+training pool (= `pairs.jsonl` minus `val_slice.jsonl`, 10,263 rows) we mine
+two sources of hard negatives:
 
 1. **BM25 top-k** against the corpus, querying with the *training question*
-   text. Take the top-k results that are *not* the positive opinion. Use the
-   search-lab's BM25 engine
+   text. Take the top results that are *not* the positive opinion. Reuses
+   the search-lab's BM25 engine
    (`/home/nick/Projects/fppc-opinions-search-lab/src/engines/bm25_full_text.py`
-   — class `BM25FullText`, method `.search(query, top_k)`) so the negatives
-   reflect what the production retriever surfaces. Reusing this code also
-   guarantees the held-out opinions are excluded only by *our* filter, not by
-   different indexing logic.
+   — class `BM25FullText`), so the negatives reflect what the production
+   retriever actually surfaces. Configured to keep up to 5 per row after
+   over-fetching 30 candidates (the over-fetch buffer absorbs exclusions).
 2. **Same-statute different opinion**: any other corpus opinion whose
-   `citations.government_code` set overlaps with the positive's. These are
-   "topically similar but factually distinct" — the hardest kind of legal
-   distractor.
+   `citations.government_code` set overlaps with the positive's, after
+   normalizing subsection markers (`87103(a)` → `87103`). Candidates are
+   ranked by **shared-code count** so we prefer opinions that overlap on
+   many statutes rather than a single generic one (e.g., bare `1090`).
+   Up to 5 per row.
 
-Constraints:
-- **Held-out opinions must be filtered out** of every negative candidate
-  list. Use the same `load_held_out()` logic as `build_training_pairs.py`
-  (derive from `eval/dataset.json`).
-- **Val-slice opinions must also be filtered out** of negative candidate
-  lists for training pairs — otherwise the model sees val opinions as
-  negatives at train time, which is mild leakage. Read `val_slice.jsonl`,
-  collect its `opinion_id`s, exclude them.
-- **Target ~5–10 hard negatives per positive**, ideally a mix of both
-  sources (e.g., top-5 BM25 + 3-5 same-statute, deduplicated).
+Constraints applied to every candidate pool:
+- The positive opinion itself.
+- The 624 eval-referenced held-out opinions
+  (same `load_held_out()` logic as `build_training_pairs.py`).
+- The 543 val-slice opinion IDs (mild leakage to avoid: don't let the
+  trainer see val opinions as negatives at train time).
 
-Output format: one line per training opinion, keyed by `opinion_id`, with
-the negative `opinion_id`s and their source(s). The trainer joins this with
-`pairs.jsonl` on the fly.
+Dedup: when an opinion appears in both source pools, we keep one record
+and merge — `source = "bm25+same_statute"`, both the BM25 rank/score and
+the shared statute list are retained.
+
+### Output format
+
+`data/training/hard_negatives.jsonl`, one line per training opinion:
+
+```json
+{
+  "opinion_id": "A-19-008",
+  "negatives": [
+    {"opinion_id": "16-117",  "source": "bm25",         "rank": 1, "score": 12.34},
+    {"opinion_id": "11-002",  "source": "same_statute", "shared_codes": ["1090", "87100"]},
+    {"opinion_id": "08-219",  "source": "bm25+same_statute",
+     "rank": 3, "score": 8.21, "shared_codes": ["1090"]}
+  ]
+}
+```
+
+The trainer joins this with `pairs.jsonl` on the fly. `pos_full_text`
+(or `pos_qa_text`, depending on the experiment) of each negative
+`opinion_id` is used as the negative document.
+
+### Coverage report (actual run)
+
+From `data/training/hard_negatives_coverage.json`:
+
+| Metric | Value |
+|---|---:|
+| Training pool size | 10,263 |
+| Rows with ≥1 negative | 10,263 (100.00%) |
+| Rows with 0 BM25 hits | 0 |
+| Rows with 0 same-statute hits | 1,150 (11.2% — opinions with empty `government_code`) |
+| Source breakdown (rows) | mixed: 9,113 · bm25-only: 1,150 |
+| Negative records kept (bm25 only) | 50,125 |
+| Negative records kept (same_statute only) | 44,350 |
+| Negative records kept (bm25 ∩ same_statute) | 1,190 |
+| **Total negative records** | **95,665** |
+| Mean negatives per row | 9.32 |
+
+**Negatives-per-row histogram**: 80% of rows get the full 10 negatives;
+the remaining mass clusters at 5 (the BM25-only rows with no statute
+hits). Distribution:
+
+| n_negatives | rows |
+|---:|---:|
+| 5 | 1,154 |
+| 6 | 13 |
+| 7 | 41 |
+| 8 | 157 |
+| 9 | 706 |
+| 10 | 8,192 |
+
+**BM25 score stats** (kept negatives only):
+
+| min | p10 | p50 | p90 | p99 | max | mean |
+|---:|---:|---:|---:|---:|---:|---:|
+| 3.3 | 30.6 | 61.3 | 205.8 | 1,256 | 11,528 | 121.6 |
+
+The long tail (max ≈ 11.5k) comes from very short queries hitting small
+older opinions where IDF dominates — not a bug, just BM25 behaviour on a
+heterogeneous corpus.
+
+**Shared-codes count stats** (same-statute negatives only):
+
+| min | p10 | p50 | p90 | p99 | max | mean |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1 | 4 | 6 | 8 | 12 | 3.91 |
+
+Median same-statute negative shares 4 base statute codes with the positive,
+which is a strong overlap signal in this corpus.
+
+**BM25 ∩ same-statute overlap is small (1,190 of ~95k records, ~1.2%).**
+The two sources are largely complementary — keyword similarity and statute
+co-citation surface different distractors, which is the desired outcome.
+
+### Cost
+
+CPU-only, single-process. Wall time: 2,485 seconds (~41 min) on Strix Halo
+for 10,263 rows = ~4.1 rows/sec. The statute graph is built in <1 sec; the
+bottleneck is BM25 scoring (each query scores against all 14,096 docs).
+Reuses the cached BM25 index at
+`../fppc-opinions-search-lab/indexes/BM25FullText_index.pkl`.
 
 ## Coverage report (current run)
 
@@ -242,10 +320,13 @@ that's <1% of pairs and acceptable.
 - `data/training/val_slice.jsonl` (gitignored) — 543 rows.
 - `data/training/val_slice_coverage.json` (gitignored) — distribution-vs-pop
   check.
-- `data/training/hard_negatives.jsonl` (pending; gitignored).
+- `data/training/hard_negatives.jsonl` (gitignored, ~9 MB) — 10,263 rows,
+  95,665 negative records total.
+- `data/training/hard_negatives_coverage.json` (gitignored; small) — counts
+  and per-source stats.
 - `scripts/build_training_pairs.py` — regenerates `pairs.jsonl`
   deterministically from corpus + eval dataset.
 - `scripts/build_val_slice.py` — regenerates `val_slice.jsonl`
   deterministically (seed = 20260521).
-- `scripts/mine_hard_negatives.py` — pending.
+- `scripts/mine_hard_negatives.py` — mines BM25 + same-statute negatives.
 - This document.

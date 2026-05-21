@@ -1,9 +1,9 @@
 # Implementation Plan (draft)
 
-> **Status:** Sprints 0 and 1 complete. Fine-tune target selected
-> (BGE-large-en-v1.5). Sprint 2 (training data construction) is next; later
-> sprints are outlined but should be reviewed against the Sprint 2 results
-> before committing.
+> **Status:** Sprints 0, 1, and 2 complete. Fine-tune target selected
+> (Snowflake-arctic-embed-l-v2.0). Sprint 3 (initial fine-tuning sweep) is
+> next; later sprints are outlined but should be reviewed against the
+> Sprint 2 results before committing.
 
 ---
 
@@ -55,7 +55,7 @@ snowflake-arctic-l-v2) flushed out Snowflake as the clear winner.
 
 ---
 
-## Sprint 2 — Training data construction (in progress)
+## Sprint 2 — Training data construction ✅ done
 
 **Goal**: produce a versioned training dataset and a held-out validation
 slice; document every decision. Design captured in
@@ -66,7 +66,7 @@ slice; document every decision. Design captured in
 | Held-out exclusion (624 eval-referenced opinions) | ✅ done | enforced inside the pair builder |
 | Pair file with 4 positive-doc columns + question_source marker | ✅ done | `data/training/pairs.jsonl` (10,806 rows, gitignored) |
 | Validation slice, 5% stratified by year, seed=20260521 | ✅ done | `data/training/val_slice.jsonl` (543 rows, gitignored) |
-| Hard-negative mining (BM25 top-k + same-statute) | ⏸️ pending | `data/training/hard_negatives.jsonl` (TBD) |
+| Hard-negative mining (BM25 top-k + same-statute) | ✅ done | `data/training/hard_negatives.jsonl` (10,263 rows, 95,665 negs, gitignored) |
 | Design doc | ✅ done | `notes/training_data_design.md` |
 | Optional query augmentation (LLM paraphrases) | ⏸️ deferred to Sprint 3 ablation | — |
 
@@ -75,8 +75,13 @@ opinions, including score=0) rather than the 596-positive-only count from
 the leakage report. Training distribution is naturally COI-heavy (56.5%) so
 no explicit topic oversampling is applied.
 
-**Next session pickup point**: implement `scripts/mine_hard_negatives.py`.
-See `notes/CONTINUATION.md` for the full handoff.
+Hard-negative coverage: 100% of the training pool gets at least one
+negative; 80% get the full 10 (5 BM25 + 5 same-statute, deduplicated).
+The 1,150 rows with no statute hits (~11.2%) are opinions whose
+`citations.government_code` list is empty — they fall back to BM25-only
+with 5 negatives. BM25 and same-statute pools are largely complementary
+(only 1.2% of records overlap), so the two sources surface different
+distractors as intended.
 
 ---
 
