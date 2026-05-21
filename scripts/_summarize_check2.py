@@ -8,6 +8,9 @@ FILES = {
     "BGE-base-en-v1.5": "results/check2_bge-base-en-v1.5.json",
     "BGE-large-en-v1.5": "results/check2_bge-large-en-v1.5.json",
     "Nomic-embed-text-v1.5": "results/check2_nomic-embed-text-v1.5.json",
+    "gte-modernbert-base": "results/check2_gte-modernbert-base.json",
+    "Qwen3-Embedding-0.6B": "results/check2_qwen3-embed-0.6b.json",
+    "Snowflake-arctic-l-v2": "results/check2_snowflake-arctic-embed-l-v2.0.json",
 }
 
 

@@ -52,42 +52,49 @@ moves" result is a publishable negative for future legal-corpus work.
 
 ## Target model
 
-**`BAAI/bge-large-en-v1.5`** (335M, 1024d). Selected after Check 2 finished;
+**`Snowflake/snowflake-arctic-embed-l-v2.0`** (568M, 1024d, native 8192-token
+context). Selected after Check 2 with all 7 candidate models benchmarked;
 full justification in `notes/check2_open_baselines_report.md`. Headline:
 
-- Best overall numbers among open models — **nDCG@5 = 0.282, MRR = 0.495**,
-  vs OpenAI 0.263 / 0.494 and BGE-base 0.268 / 0.478.
-- Same prefix convention as BGE-base (low migration cost).
-- 1024-dim embeddings provide more parameters to fit than base without moving
-  to a much larger architecture family.
-- Native max_seq=512 is sufficient for `qa_text` (p90 ≈ 649 tokens, only ~10%
-  hit the cap).
-- Fits comfortably on the Strix Halo iGPU (96 GB allocated to the GPU);
-  embedding the full corpus took 8 min, training should be tractable.
+- Best overall numbers across all 7 open models — **nDCG@5 = 0.296,
+  MRR = 0.522**, vs BGE-large 0.282 / 0.495 and OpenAI 0.263 / 0.494.
+- Simple prompting: `query: ` prefix on queries only; no instruction template;
+  no `trust_remote_code`.
+- 1024-dim embeddings — same as BGE-large and the production OpenAI index, so
+  the deployment swap in Sprint 5 doesn't change index size.
+- **Native 8192-token context** covers 100% of corpus documents without
+  truncation. This unlocks `full_text` as a viable positive-doc column for
+  Sprint 2 training-data ablations.
+- XLM-RoBERTa backbone, Apache 2.0, mature in sentence-transformers.
+- Fits comfortably on the Strix Halo iGPU; embedding the full corpus took
+  ~12 min.
 
-Nomic-v1.5 was not selected: its long-context advantage didn't materialize on
-this corpus (nDCG@5 = 0.265 at max_seq=1024, essentially tied with BGE-base),
-and `trust_remote_code` is a future-compat liability. Keep available as a
-Sprint 3 ablation.
+BGE-large was the prior pick and is now #2. The other long-context candidates
+(gte-modernbert-base, Qwen3-Embedding-0.6B) finished mid-pack overall but
+have niche strengths (lobbying for gte-modernbert, keyword queries for Qwen3)
+that could matter for Sprint 4 ensembling experiments. Nomic-v1.5 didn't
+benefit from its long context on this corpus and has `trust_remote_code`
+friction.
 
 ## Success criteria
 
 All measured on the 65-query eval set, scored with `src.scorer` from
 `../fppc-opinions-eval` (same path used for every baseline).
 
-Baseline reference for BGE-large (untuned): **nDCG@5 = 0.282, MRR = 0.495,
-nDCG@10 = 0.254**, with `conflicts_of_interest` at **nDCG@5 = 0.090** (29 of
-65 queries, the dominant failure mode).
+Baseline reference for Snowflake-arctic-l-v2 (untuned): **nDCG@5 = 0.296,
+MRR = 0.522, nDCG@10 = 0.266**, with `conflicts_of_interest` at
+**nDCG@5 = 0.106** (29 of 65 queries, the dominant failure mode — universally
+weak across all 7 baseline models).
 
-- **Threshold (must hit)**: semantic-only nDCG@5 ≥ 0.32 — clearly above every
-  off-the-shelf baseline (BGE-large 0.282 is the new floor; +0.04 absolute).
+- **Threshold (must hit)**: semantic-only nDCG@5 ≥ 0.33 — clearly above every
+  off-the-shelf baseline (Snowflake 0.296 is the new floor; +0.03 absolute).
 - **Goal**: semantic-only nDCG@5 ≥ 0.36 — matches the published BM25-only
   number (0.358) with embeddings alone.
-- **Stretch**: hybrid (Experiment 009 with tuned BGE-large in place of OpenAI)
+- **Stretch**: hybrid (Experiment 009 with tuned Snowflake in place of OpenAI)
   nDCG@5 ≥ 0.42 and MRR ≥ 0.72 — meaningfully above the current production
   hybrid's 0.387 / 0.684.
-- **Subgroup gate**: `conflicts_of_interest` nDCG@5 ≥ 0.20 (more than doubles
-  BGE-large's 0.090; this 45%-of-eval topic is where overall numbers will be
+- **Subgroup gate**: `conflicts_of_interest` nDCG@5 ≥ 0.20 (nearly doubles
+  Snowflake's 0.106; this 45%-of-eval topic is where overall numbers will be
   decided). Do not declare success on the overall number if this subgroup
   doesn't move.
 

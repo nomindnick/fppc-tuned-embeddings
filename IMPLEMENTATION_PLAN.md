@@ -20,14 +20,17 @@ training data.
 | Check 2c: nomic-embed-text-v1.5 baseline | ✅ done | `results/check2_nomic-embed-text-v1.5.json` |
 | Check 2d: bge-large-en-v1.5 baseline | ✅ done | `results/check2_bge-large-en-v1.5.json` |
 
-**Headline**:
-- BGE-large is the best open-weights baseline (nDCG@5 = 0.282, MRR = 0.495),
-  modestly ahead of OpenAI (0.263 / 0.494) and BGE-base (0.268 / 0.478).
-  Nomic-v1.5 at max_seq=1024 was essentially tied with BGE-base.
+**Headline** (after second-pass benchmark of 3 additional candidates):
+- **Snowflake-arctic-embed-l-v2.0 is the best open-weights baseline**
+  (nDCG@5 = 0.296, MRR = 0.522). Beats BGE-large (0.282 / 0.495) and OpenAI
+  (0.263 / 0.494) on every overall metric. Native 8192-token context
+  unlocks full-text positive docs for Sprint 2.
+- gte-modernbert-base wins lobbying outright; Qwen3-Embedding-0.6B wins
+  keyword queries outright. Both could be Sprint 4 ensembling levers.
 - Leakage is real but contained — hold out 596 eval-referenced opinions.
-- `conflicts_of_interest` (45% of eval) scores ≈0.10 nDCG@5 on every model.
-  This is the dominant overall-metric driver and the explicit target for
-  fine-tuning.
+- `conflicts_of_interest` (45% of eval) scores ≈0.09–0.13 nDCG@5 on **every**
+  one of 7 models tested. Universally broken; fine-tuning has to attack it
+  directly.
 
 ---
 
@@ -45,7 +48,10 @@ training data.
 5. ✅ SPEC.md "Target model" and "Success criteria" sections updated with
    concrete numbers.
 
-**Fine-tune target**: `BAAI/bge-large-en-v1.5` (see SPEC for justification).
+**Fine-tune target**: `Snowflake/snowflake-arctic-embed-l-v2.0` (see SPEC for
+justification). Updated 2026-05-21 after second-pass benchmark of three
+additional candidates (gte-modernbert-base, Qwen3-Embedding-0.6B,
+snowflake-arctic-l-v2) flushed out Snowflake as the clear winner.
 
 ---
 

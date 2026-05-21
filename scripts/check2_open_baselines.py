@@ -89,6 +89,41 @@ MODELS: dict[str, ModelConfig] = {
         trust_remote_code=True,
         notes="Matryoshka; max_seq capped at 1024 for CPU runtime (covers ~98% of docs).",
     ),
+    "gte-modernbert-base": ModelConfig(
+        name="gte-modernbert-base",
+        hf_id="Alibaba-NLP/gte-modernbert-base",
+        query_prefix="",
+        doc_prefix="",
+        # Native 8192 cap; using 1024 to keep apples-to-apples runtime with
+        # the other open-model baselines and because per-corpus tokens p90
+        # already fits well under 1024.
+        max_seq_length=1024,
+        trust_remote_code=False,
+        notes="ModernBERT encoder, 8192 native context, no prompt prefix.",
+    ),
+    "qwen3-embed-0.6b": ModelConfig(
+        name="qwen3-embed-0.6b",
+        hf_id="Qwen/Qwen3-Embedding-0.6B",
+        # Qwen3-Embedding takes an instruction in the query prompt; doc text
+        # is encoded raw. Instruction wording matters for the task framing.
+        query_prefix=(
+            "Instruct: Given a legal question, retrieve the FPPC advisory "
+            "opinion that addresses it.\nQuery: "
+        ),
+        doc_prefix="",
+        max_seq_length=1024,
+        trust_remote_code=False,
+        notes="Decoder-as-encoder with last-token pooling; instruction-aware.",
+    ),
+    "snowflake-arctic-l-v2": ModelConfig(
+        name="snowflake-arctic-embed-l-v2.0",
+        hf_id="Snowflake/snowflake-arctic-embed-l-v2.0",
+        query_prefix="query: ",
+        doc_prefix="",
+        max_seq_length=1024,
+        trust_remote_code=False,
+        notes="XLM-RoBERTa base, 8192 context; query: prefix on queries only.",
+    ),
 }
 
 
