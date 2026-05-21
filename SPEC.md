@@ -1,9 +1,8 @@
 # SPEC — FPPC Tuned Embeddings (draft)
 
-> **Status:** Draft. Anchored in Check 1 (complete) and Check 2 (partially
-> complete — bge-base + OpenAI replay only; nomic-v1.5 and bge-large pending
-> on Strix Halo). The "target metric" section will firm up once we have the
-> full open-model baseline picture.
+> **Status:** Draft. Anchored in Check 1 (complete) and Check 2 (complete —
+> all four baselines measured on Strix Halo; see
+> `notes/check2_open_baselines_report.md`).
 
 ## Problem
 
@@ -53,33 +52,44 @@ moves" result is a publishable negative for future legal-corpus work.
 
 ## Target model
 
-**Tentatively** `BAAI/bge-base-en-v1.5` (110M, 768d). Justification:
+**`BAAI/bge-large-en-v1.5`** (335M, 1024d). Selected after Check 2 finished;
+full justification in `notes/check2_open_baselines_report.md`. Headline:
 
-- Check 2 baseline shows it matches `text-embedding-3-small` out of the box
-  (nDCG@5 = 0.268 vs 0.263; MRR = 0.478 vs 0.494). No quality cost for moving
-  off OpenAI.
-- Mature fine-tuning support via `sentence-transformers`.
-- 110M params is comfortable for the Strix Halo (128GB unified) — full
-  fine-tune feasible, multiple short runs per day plausible.
+- Best overall numbers among open models — **nDCG@5 = 0.282, MRR = 0.495**,
+  vs OpenAI 0.263 / 0.494 and BGE-base 0.268 / 0.478.
+- Same prefix convention as BGE-base (low migration cost).
+- 1024-dim embeddings provide more parameters to fit than base without moving
+  to a much larger architecture family.
+- Native max_seq=512 is sufficient for `qa_text` (p90 ≈ 649 tokens, only ~10%
+  hit the cap).
+- Fits comfortably on the Strix Halo iGPU (96 GB allocated to the GPU);
+  embedding the full corpus took 8 min, training should be tractable.
 
-Re-evaluate after `nomic-embed-text-v1.5` (and optionally `bge-large-en-v1.5`)
-finish on Strix Halo. If nomic significantly outperforms BGE-base on the
-baseline (especially on long-doc topics), reconsider.
+Nomic-v1.5 was not selected: its long-context advantage didn't materialize on
+this corpus (nDCG@5 = 0.265 at max_seq=1024, essentially tied with BGE-base),
+and `trust_remote_code` is a future-compat liability. Keep available as a
+Sprint 3 ablation.
 
 ## Success criteria
 
-To be finalized after Check 2 completes. **Provisional** targets, each
-measured on the 65-query eval set:
+All measured on the 65-query eval set, scored with `src.scorer` from
+`../fppc-opinions-eval` (same path used for every baseline).
 
-- **Threshold (must hit)**: semantic-only nDCG@5 ≥ 0.30 (clearly above the
-  OpenAI/bge-base baseline of ~0.26–0.27).
-- **Goal**: semantic-only nDCG@5 ≥ 0.35 (approaches BM25-only quality with
-  just embeddings).
-- **Stretch**: hybrid (Experiment 009 with tuned embeddings) nDCG@5 ≥ 0.42
-  and MRR ≥ 0.72.
-- **Subgroup**: meaningful (≥ 5 absolute points) improvement on the
-  `conflicts_of_interest` topic (current MRR 0.415, the corpus's hardest
-  topic).
+Baseline reference for BGE-large (untuned): **nDCG@5 = 0.282, MRR = 0.495,
+nDCG@10 = 0.254**, with `conflicts_of_interest` at **nDCG@5 = 0.090** (29 of
+65 queries, the dominant failure mode).
+
+- **Threshold (must hit)**: semantic-only nDCG@5 ≥ 0.32 — clearly above every
+  off-the-shelf baseline (BGE-large 0.282 is the new floor; +0.04 absolute).
+- **Goal**: semantic-only nDCG@5 ≥ 0.36 — matches the published BM25-only
+  number (0.358) with embeddings alone.
+- **Stretch**: hybrid (Experiment 009 with tuned BGE-large in place of OpenAI)
+  nDCG@5 ≥ 0.42 and MRR ≥ 0.72 — meaningfully above the current production
+  hybrid's 0.387 / 0.684.
+- **Subgroup gate**: `conflicts_of_interest` nDCG@5 ≥ 0.20 (more than doubles
+  BGE-large's 0.090; this 45%-of-eval topic is where overall numbers will be
+  decided). Do not declare success on the overall number if this subgroup
+  doesn't move.
 
 ## Constraints
 

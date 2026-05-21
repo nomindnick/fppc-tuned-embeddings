@@ -1,12 +1,13 @@
 # Implementation Plan (draft)
 
-> **Status:** Draft sprints. Sprint 0 ("Pre-planning checks") is partially
-> complete. Sprint 1 finalizes Check 2 on the Strix Halo. Later sprints are
-> outlined but should be reviewed once we have the full baseline picture.
+> **Status:** Sprints 0 and 1 complete. Fine-tune target selected
+> (BGE-large-en-v1.5). Sprint 2 (training data construction) is next; later
+> sprints are outlined but should be reviewed against the Sprint 2 results
+> before committing.
 
 ---
 
-## Sprint 0 — Pre-planning checks ✅ (mostly done)
+## Sprint 0 — Pre-planning checks ✅ done
 
 **Goal**: ground the project plan in measured numbers before designing
 training data.
@@ -16,29 +17,35 @@ training data.
 | Check 1: Eval-set leakage analysis | ✅ done | `notes/check1_leakage_report.md`, `results/check1_leakage.json` |
 | Check 2a: Reproduce OpenAI baseline on this scoring path | ✅ done | `results/check2_openai_baseline.json` |
 | Check 2b: bge-base-en-v1.5 baseline | ✅ done | `results/check2_bge-base-en-v1.5.json` |
-| Check 2c: nomic-embed-text-v1.5 baseline | ⏸️ pending — paused for hardware switch | `results/check2_nomic-embed-text-v1.5.json` (TBD) |
-| Check 2d: bge-large-en-v1.5 baseline (optional scale check) | ⏸️ pending | `results/check2_bge-large-en-v1.5.json` (TBD) |
+| Check 2c: nomic-embed-text-v1.5 baseline | ✅ done | `results/check2_nomic-embed-text-v1.5.json` |
+| Check 2d: bge-large-en-v1.5 baseline | ✅ done | `results/check2_bge-large-en-v1.5.json` |
 
-**Headline so far**:
-- BGE-base ≈ OpenAI on this corpus (nDCG@5 0.268 vs 0.263). Open-model
-  parity confirmed for at least one fine-tunable option.
+**Headline**:
+- BGE-large is the best open-weights baseline (nDCG@5 = 0.282, MRR = 0.495),
+  modestly ahead of OpenAI (0.263 / 0.494) and BGE-base (0.268 / 0.478).
+  Nomic-v1.5 at max_seq=1024 was essentially tied with BGE-base.
 - Leakage is real but contained — hold out 596 eval-referenced opinions.
+- `conflicts_of_interest` (45% of eval) scores ≈0.10 nDCG@5 on every model.
+  This is the dominant overall-metric driver and the explicit target for
+  fine-tuning.
 
 ---
 
-## Sprint 1 — Finalize Check 2 on Strix Halo
+## Sprint 1 — Finalize Check 2 on Strix Halo ✅ done
 
-**Goal**: complete the open-model baseline picture so we can pick a
-fine-tune target with confidence.
+**Goal**: complete the open-model baseline picture and pick a fine-tune target.
 
-1. Set up the project on Strix Halo (see `notes/CONTINUATION.md`).
-2. Run nomic-v1.5 baseline at max_seq_length=1024. Should be ~5–10× faster
-   than on laptop CPU.
-3. Run bge-large-en-v1.5 baseline (scale-vs-base check).
-4. Write `notes/check2_open_baselines_report.md` summarizing all four
-   numbers (OpenAI, BGE-base, BGE-large, Nomic-v1.5) with per-topic
-   breakdowns and a final recommendation on the fine-tune target.
-5. Finalize SPEC.md success criteria with concrete numbers.
+1. ✅ Set up the project on Strix Halo. PyTorch ROCm 6.2 wheels run on the
+   gfx1151 iGPU under `HSA_OVERRIDE_GFX_VERSION=11.0.0` (falls back to
+   gfx1100 kernels).
+2. ✅ Nomic-v1.5 at max_seq=1024 (~4 min on GPU vs ~2.5h estimated on laptop).
+3. ✅ BGE-large baseline (~8 min on GPU).
+4. ✅ `notes/check2_open_baselines_report.md` summarizes all four models
+   with per-topic and per-type breakdowns.
+5. ✅ SPEC.md "Target model" and "Success criteria" sections updated with
+   concrete numbers.
+
+**Fine-tune target**: `BAAI/bge-large-en-v1.5` (see SPEC for justification).
 
 ---
 
