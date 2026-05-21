@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 data/indexes/
+data/training/
 logs_*.txt
 .env
 .DS_Store
