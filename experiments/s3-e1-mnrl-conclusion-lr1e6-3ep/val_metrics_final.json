@@ -1,0 +1,14 @@
+{
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_accuracy@1": 0.8817427385892116,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_accuracy@3": 0.9294605809128631,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_accuracy@5": 0.9398340248962656,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_precision@5": 0.1879668049792531,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_precision@10": 0.09585062240663901,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_recall@5": 0.9398340248962656,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_recall@10": 0.9585062240663901,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_ndcg@5": 0.9147769104833516,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_ndcg@10": 0.920395473766303,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_mrr@5": 0.9062586445366527,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_mrr@10": 0.9083358032009484,
+  "s3-e1-mnrl-conclusion-lr1e6-3ep_cosine_map@100": 0.909774965522899
+}

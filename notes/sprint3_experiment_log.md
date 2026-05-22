@@ -37,6 +37,7 @@ corpus, using the same scoring code as Check 2 baselines
 | s3-d1-mnrl-conclusion-qa | MNRL on `pos_conclusion_only` | 2e-5 | 560/1 | 0.230 | 0.426 | 0.223 | 0.083 | **−0.066** (vs Snowflake) |
 | **s3-d2-mnrl-conclusion-lr5e6** | MNRL on `pos_conclusion_only`, LR↓ | **5e-6** | 560/1 | **0.275** | **0.504** | 0.253 | 0.102 | **−0.021** (vs Snowflake) |
 | **s3-d3-mnrl-conclusion-lr1e6** | MNRL on `pos_conclusion_only`, LR↓↓ | **1e-6** | 560/1 | **0.290** | **0.538** | 0.265 | **0.124** | **−0.006** (vs Snowflake); **MRR +0.016**, **COI +0.018**, **fact_pattern +0.037** |
+| s3-e1-mnrl-conclusion-lr1e6-3ep | MNRL on `pos_conclusion_only`, +epochs | 1e-6 | 1680/3 | 0.281 | 0.507 | 0.257 | 0.103 | −0.015 (vs Snowflake); regression vs s3-d3 — mild overtraining |
 
 ---
 
@@ -396,6 +397,72 @@ training questions (sentence-shaped NL + fact patterns) improved by
 +0.008 to +0.037; query types that don't (keyword bags) regressed.
 
 **Cost**: 30.6 min train + 8 min score.
+
+---
+
+### s3-e1-mnrl-conclusion-lr1e6-3ep — same as s3-d3 but 3 epochs  *(2026-05-22)*
+
+**Hypothesis (Sprint 3 lever 1)**: s3-d3's val-slice was still climbing
+at step 560 (end of epoch 1) — gains might continue with more training
+at LR=1e-6.
+
+**Config**: identical to s3-d3 in every dimension except `epochs = 3`
+(1,680 steps) and `val_every_n_steps = 200` (to keep val-overhead manageable).
+
+**Result**: nDCG@5 = **0.281** (−0.015 vs base; **−0.009 vs s3-d3**),
+MRR = 0.507 (vs d3's 0.538), COI = 0.103 (vs d3's 0.124).
+
+| Metric | s3-d3 (1 ep) | **s3-e1 (3 ep)** | Δ vs d3 |
+|---|---:|---:|---:|
+| nDCG@5 | 0.290 | 0.281 | −0.009 |
+| MRR | 0.538 | 0.507 | **−0.031** |
+| COI nDCG@5 | 0.124 | 0.103 | **−0.021** |
+| natural_language | 0.330 | 0.304 | −0.026 |
+| campaign_finance | 0.363 | 0.381 | +0.018 |
+| fact_pattern | 0.390 | 0.392 | tied |
+| gifts | 0.558 | 0.563 | tied |
+| lobbying | 0.658 | 0.649 | tied |
+| other | 0.295 | 0.276 | −0.019 |
+| keyword | 0.190 | 0.190 | tied |
+
+**Val-slice (the proxy that misled us this round)**:
+
+| step | epoch | acc@1 | nDCG@5 |
+|---:|---:|---:|---:|
+| 200 | 0.36 | 0.836 | 0.876 |
+| 400 | 0.71 | 0.859 | 0.901 |
+| 600 | 1.07 | 0.871 | 0.905 |
+| 800 | 1.43 | 0.876 | 0.912 |
+| 1000 | 1.79 | 0.880 | 0.912 |
+| 1200 | 2.14 | 0.880 | 0.912 |
+| 1400 | 2.50 | 0.882 | 0.914 |
+| 1600 | 2.86 | 0.882 | 0.914 |
+| 1680 | 3.00 | 0.882 | 0.915 |
+
+Val-slice plateaued around step 1000 (~epoch 1.8) and showed cosmetic
+improvement (0.880 → 0.882) through epoch 3, while the 65-query
+distribution clearly degraded over the same span. **Lesson**: the
+val-slice still measures a narrower task than the 65-query eval —
+question→own-conclusion identity vs heterogeneous search-style
+retrieval. It's informative for catching collapse (s3-a1 saturation,
+s3-d1 desaturation) but not reliable for finding the optimal stopping
+point within a healthy training regime.
+
+**Interpretation**: At LR=1e-6, 1 epoch is the sweet spot. The training
+distribution (FPPC opinion-author paraphrases of conclusions) and the
+eval distribution diverge enough that further training optimizes the
+training-distribution mapping at the expense of generalization on the
+65-query distribution — exactly the H4 (distribution mismatch) shape
+we'd predicted, just manifesting through epochs instead of LR.
+
+Notably, the *biggest* regressions are on the dimensions where d3 most
+clearly *beat* base (MRR, COI, NL queries). The dimensions where d3
+already lost (keyword, gifts) are essentially flat — those have a
+different bottleneck. This is good evidence that further epochs at
+LR=1e-6 are not the lever to pull; LoRA or paraphrase augmentation
+are.
+
+**Wall time**: ~90 min train + 8 min score.
 
 ---
 
