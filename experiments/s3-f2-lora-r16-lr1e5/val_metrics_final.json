@@ -1,0 +1,14 @@
+{
+  "s3-f2-lora-r16-lr1e5_cosine_accuracy@1": 0.8319502074688797,
+  "s3-f2-lora-r16-lr1e5_cosine_accuracy@3": 0.8817427385892116,
+  "s3-f2-lora-r16-lr1e5_cosine_accuracy@5": 0.9045643153526971,
+  "s3-f2-lora-r16-lr1e5_cosine_precision@5": 0.18091286307053941,
+  "s3-f2-lora-r16-lr1e5_cosine_precision@10": 0.09190871369294605,
+  "s3-f2-lora-r16-lr1e5_cosine_recall@5": 0.9045643153526971,
+  "s3-f2-lora-r16-lr1e5_cosine_recall@10": 0.9190871369294605,
+  "s3-f2-lora-r16-lr1e5_cosine_ndcg@5": 0.8710202836037461,
+  "s3-f2-lora-r16-lr1e5_cosine_ndcg@10": 0.8757972736373516,
+  "s3-f2-lora-r16-lr1e5_cosine_mrr@5": 0.8598201936376207,
+  "s3-f2-lora-r16-lr1e5_cosine_mrr@10": 0.8618388987683594,
+  "s3-f2-lora-r16-lr1e5_cosine_map@100": 0.8645019506222723
+}

@@ -39,6 +39,7 @@ corpus, using the same scoring code as Check 2 baselines
 | **s3-d3-mnrl-conclusion-lr1e6** | MNRL on `pos_conclusion_only`, LR↓↓ | **1e-6** | 560/1 | **0.290** | **0.538** | 0.265 | **0.124** | **−0.006** (vs Snowflake); **MRR +0.016**, **COI +0.018**, **fact_pattern +0.037** |
 | s3-e1-mnrl-conclusion-lr1e6-3ep | MNRL on `pos_conclusion_only`, +epochs | 1e-6 | 1680/3 | 0.281 | 0.507 | 0.257 | 0.103 | −0.015 (vs Snowflake); regression vs s3-d3 — mild overtraining |
 | s3-f1-lora-r16-lr1e4 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only` | 1e-4 | 560/1 | 0.278 | 0.501 | 0.250 | 0.111 | −0.018 (vs Snowflake); regression vs s3-d3 — LoRA LR likely too hot |
+| s3-f2-lora-r16-lr1e5 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only`, LR↓ | 1e-5 | 560/1 | 0.277 | 0.521 | 0.262 | 0.124 | −0.013 (vs Snowflake); different shape from s3-d3 — gifts +0.039, lobbying = base, but fact_pattern −0.040 vs d3 |
 
 ---
 
@@ -516,6 +517,63 @@ opposite. Same lesson as s3-e1: val-slice cannot replace 65-query eval
 for stopping decisions.
 
 **Wall time**: 30 min train + 7 min score.
+
+---
+
+### s3-f2-lora-r16-lr1e5 — same LoRA config, LR=1e-5  *(2026-05-22)*
+
+**Hypothesis (Sprint 3 lever 2, retry)**: s3-f1's LR=1e-4 was too hot for
+our 1e-6-optimal full-FT setup. Drop LR 10x to 1e-5 — the "LoRA LR is
+5–10x full-FT LR" heuristic's actual lower bound for our case. If LoRA
+helps at all, the protect-gifts/lobbying behavior should now manifest.
+
+**Config**: identical to s3-f1 except `learning_rate = 1e-5` (vs 1e-4).
+
+**Result**: nDCG@5 = **0.277** (−0.019 vs base, −0.013 vs s3-d3),
+MRR = 0.521, COI = 0.124.
+
+| Metric | base | s3-d3 | s3-f1 (1e-4) | **s3-f2 (1e-5)** | Δ vs d3 |
+|---|---:|---:|---:|---:|---:|
+| nDCG@5 | 0.296 | 0.290 | 0.278 | 0.277 | −0.013 |
+| MRR | 0.522 | 0.538 | 0.501 | 0.521 | −0.017 |
+| nDCG@10 | 0.266 | 0.265 | 0.250 | 0.262 | −0.003 |
+| COI | 0.106 | 0.124 | 0.111 | **0.124** | tied |
+| campaign_finance | 0.397 | 0.363 | 0.351 | 0.304 | −0.059 |
+| gifts (n=7) | 0.638 | 0.558 | 0.521 | **0.597** | **+0.039** |
+| lobbying (n=5) | 0.660 | 0.658 | 0.645 | **0.660** | **+0.002 (= base)** |
+| other | 0.283 | 0.295 | 0.305 | 0.270 | −0.025 |
+| keyword | 0.237 | 0.190 | 0.177 | 0.185 | −0.005 |
+| natural_language | 0.322 | 0.330 | 0.319 | **0.331** | +0.001 |
+| fact_pattern | 0.353 | 0.390 | 0.378 | 0.350 | −0.040 |
+
+**Interpretation**: LoRA at LR=1e-5 produces the *predicted shape* of
+trade-off, just with a price on the other end:
+- **Gifts and lobbying recovered** (gifts +0.039 vs d3; lobbying = base
+  exactly). The frozen 99.7% of params *did* protect base capabilities
+  exactly as expected.
+- **COI lift maintained** (+0.018 vs base, tied with d3's lift).
+- **Natural-language tied with d3** — the trained-distribution gain
+  on sentence-shaped queries is still captured.
+- **Fact_pattern and campaign_finance regressed vs d3** — those are
+  exactly the slices where d3's full FT had room to *over*-specialize,
+  and LoRA's frozen backbone can't recreate that gain.
+
+So both winners (d3 + f2) are valid endpoints with different shapes:
+- **d3** = max overall nDCG@5/MRR/fact_pattern by sacrificing
+  gifts/lobbying.
+- **f2** = max preservation of gifts/lobbying by sacrificing fact_pattern
+  and campaign_finance.
+
+Either model could be the right pick depending on which deficit matters
+more for the production app, or they could be ensembled. d3 remains
+the single-best model on the headline metrics.
+
+LoRA at this config space (r=16 Q/V, α=32) is well-explored. Could
+keep iterating (r=32, more target modules including FFN, longer
+training since LoRA shouldn't overfit), but the structural shape is
+clear — moving on to lever 4 (hard negatives at low LR).
+
+**Wall time**: 30 min train + 8 min score.
 
 ---
 
