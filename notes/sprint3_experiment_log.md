@@ -38,6 +38,7 @@ corpus, using the same scoring code as Check 2 baselines
 | **s3-d2-mnrl-conclusion-lr5e6** | MNRL on `pos_conclusion_only`, LR↓ | **5e-6** | 560/1 | **0.275** | **0.504** | 0.253 | 0.102 | **−0.021** (vs Snowflake) |
 | **s3-d3-mnrl-conclusion-lr1e6** | MNRL on `pos_conclusion_only`, LR↓↓ | **1e-6** | 560/1 | **0.290** | **0.538** | 0.265 | **0.124** | **−0.006** (vs Snowflake); **MRR +0.016**, **COI +0.018**, **fact_pattern +0.037** |
 | s3-e1-mnrl-conclusion-lr1e6-3ep | MNRL on `pos_conclusion_only`, +epochs | 1e-6 | 1680/3 | 0.281 | 0.507 | 0.257 | 0.103 | −0.015 (vs Snowflake); regression vs s3-d3 — mild overtraining |
+| s3-f1-lora-r16-lr1e4 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only` | 1e-4 | 560/1 | 0.278 | 0.501 | 0.250 | 0.111 | −0.018 (vs Snowflake); regression vs s3-d3 — LoRA LR likely too hot |
 
 ---
 
@@ -463,6 +464,73 @@ LR=1e-6 are not the lever to pull; LoRA or paraphrase augmentation
 are.
 
 **Wall time**: ~90 min train + 8 min score.
+
+---
+
+### s3-f1-lora-r16-lr1e4 — LoRA r=16 Q/V at LR=1e-4  *(2026-05-22)*
+
+**Hypothesis (Sprint 3 lever 2)**: Freezing 99.7% of Snowflake's weights
+and training only low-rank attention adapters should preserve the strong
+gifts/lobbying/keyword pretrained capabilities by construction. Standard
+LoRA starting config: rank=16 on Q/V across all 24 attention layers
+(0.276% of params trainable), alpha=32, LR=1e-4 (commonly 5–10x the
+full-FT LR per LoRA convention).
+
+**Config**: same data + loss + epochs + bs + max_seq + bf16 as s3-d3.
+Differences: `use_lora=true`, `lora_rank=16`, `lora_alpha=32`,
+`lora_target_modules=["query","value"]`, `lora_dropout=0.05`,
+`learning_rate=1e-4` (vs d3's 1e-6).
+
+**Result**: nDCG@5 = **0.278** (−0.018 vs base, −0.012 vs s3-d3),
+MRR = 0.501, COI = 0.111.
+
+| Metric | base | s3-d3 | **s3-f1** | Δ vs d3 |
+|---|---:|---:|---:|---:|
+| nDCG@5 | 0.296 | 0.290 | 0.278 | −0.012 |
+| MRR | 0.522 | 0.538 | 0.501 | −0.037 |
+| COI | 0.106 | 0.124 | 0.111 | −0.013 |
+| campaign_finance | 0.397 | 0.363 | 0.351 | −0.012 |
+| gifts (n=7) | 0.638 | 0.558 | 0.521 | −0.037 |
+| lobbying (n=5) | 0.660 | 0.658 | 0.645 | −0.013 |
+| other | 0.283 | 0.295 | 0.305 | +0.010 |
+| keyword | 0.237 | 0.190 | 0.177 | −0.013 |
+| natural_language | 0.322 | 0.330 | 0.319 | −0.011 |
+| fact_pattern | 0.353 | 0.390 | 0.378 | −0.012 |
+
+**Interpretation**: LoRA at LR=1e-4 underperforms s3-d3 across nearly
+every metric, *including* on `gifts` where LoRA was supposed to help.
+That's surprising — with only 0.276% of weights trainable, the LoRA
+adapter mathematically cannot overwrite base capability the way full
+fine-tuning can. So how did gifts regress *more* than d3?
+
+Best explanation: the LR=1e-4 is too hot for this setup. The "LoRA LR
+is 5–10x full-FT LR" heuristic suggests 5e-6–1e-5 for us (since d3's
+optimum was 1e-6), not 1e-4. With effective per-step change
+concentrated into the Q/V projection adapters, 1e-4 is moving those
+adapters into regions that distort attention output enough to hurt
+the topics requiring fine-grained attention discrimination.
+
+**Val-slice was again misleading** (climbed from 0.859 → 0.873 acc@1,
+visibly faster than d3's 0.822 → 0.855), but 65-query eval moved
+opposite. Same lesson as s3-e1: val-slice cannot replace 65-query eval
+for stopping decisions.
+
+**Wall time**: 30 min train + 7 min score.
+
+---
+
+### Tooling: PEFT integration  *(added 2026-05-22 during s3-f1 setup)*
+
+Sentence-transformers v5 stores the underlying transformer at
+`model[0].model` (not `model[0].auto_model`, which is a read-only
+property). Adding LoRA via the documented `SentenceTransformer.add_adapter`
+or transformers' `PeftAdapterMixin.add_adapter` both work for training
+but don't expose `merge_adapter` — only `peft.get_peft_model` returns
+an object with `merge_and_unload`. The trainer therefore wraps
+`model[0].model` directly via `get_peft_model`, swaps it back through
+the `_modules` dict, and calls `merge_and_unload()` at save time so
+the resulting checkpoint is a plain sentence-transformers model the
+existing scorer can load without LoRA-specific handling.
 
 ---
 

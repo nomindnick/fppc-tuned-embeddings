@@ -389,6 +389,27 @@ def main():
     model.max_seq_length = cfg["max_seq_length"]
     print(f"  model loaded; max_seq_length={model.max_seq_length}")
 
+    if cfg.get("use_lora", False):
+        from peft import LoraConfig, get_peft_model
+        lora_config = LoraConfig(
+            r=cfg["lora_rank"],
+            lora_alpha=cfg["lora_alpha"],
+            target_modules=cfg["lora_target_modules"],
+            lora_dropout=cfg.get("lora_dropout", 0.05),
+            bias="none",
+            task_type="FEATURE_EXTRACTION",
+        )
+        # In sentence-transformers v5, the underlying transformer is the
+        # `model` submodule (auto_model is a read-only property). Wrap it
+        # with peft so we get a real PeftModel (supports merge_and_unload),
+        # then put it back via the _modules dict.
+        peft_wrapped = get_peft_model(model[0].model, lora_config)
+        model[0]._modules["model"] = peft_wrapped
+        n_total = sum(p.numel() for p in model.parameters())
+        n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"  LoRA enabled: trainable {n_trainable:,} / {n_total:,} "
+              f"({100 * n_trainable / max(n_total, 1):.3f}%)")
+
     loss = build_loss(model, cfg)
     print(f"  loss: {type(loss).__name__}")
 
@@ -437,6 +458,14 @@ def main():
         print(f"  final val: {json.dumps({k: v for k, v in final_metrics.items() if 'ndcg' in k.lower() or 'mrr' in k.lower()})}")
 
     print(f"\nSaving model to {cfg['model_save_dir']}…")
+    if cfg.get("use_lora", False):
+        # Merge the LoRA adapter back into the base weights so the saved
+        # checkpoint is a plain sentence-transformers model loadable by
+        # score_finetuned.py without any LoRA-specific handling. PeftModel
+        # exposes merge_and_unload which returns the merged base model.
+        merged_base = model[0].model.merge_and_unload()
+        model[0]._modules["model"] = merged_base
+        print("  LoRA adapter merged into base before save")
     model.save(cfg["model_save_dir"])
     with open(os.path.join(cfg["experiment_dir"], "model_pointer.txt"), "w") as f:
         f.write(os.path.abspath(cfg["model_save_dir"]) + "\n")

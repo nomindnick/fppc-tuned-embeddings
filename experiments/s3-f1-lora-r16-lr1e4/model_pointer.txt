@@ -1,0 +1,1 @@
+/home/nick/Projects/fppc-tuned-embeddings/data/models/s3-f1-lora-r16-lr1e4
