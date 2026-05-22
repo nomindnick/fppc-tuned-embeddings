@@ -337,9 +337,17 @@ def main():
     print("\nLoading data…")
     t0 = time.time()
     pairs = load_jsonl(cfg["pairs_path"])
+    n_base = len(pairs)
+    n_extra_total = 0
+    for extra_path in cfg.get("extra_pairs_paths", []) or []:
+        extra_rows = load_jsonl(extra_path)
+        pairs.extend(extra_rows)
+        n_extra_total += len(extra_rows)
+        print(f"  + extra pairs: {extra_path}  ({len(extra_rows)} rows)")
     val_rows = load_jsonl(cfg["val_path"])
     val_ids = {r["opinion_id"] for r in val_rows}
-    print(f"  pairs: {len(pairs)}  val: {len(val_rows)}  ({time.time() - t0:.1f}s)")
+    print(f"  pairs: {n_base} base + {n_extra_total} extra = {len(pairs)}  "
+          f"val: {len(val_rows)}  ({time.time() - t0:.1f}s)")
 
     deriv_pairs = add_derived_pos_columns(pairs, cfg["positive_column"])
     deriv_val = add_derived_pos_columns(val_rows, cfg["positive_column"])

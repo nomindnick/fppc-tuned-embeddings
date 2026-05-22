@@ -41,6 +41,7 @@ corpus, using the same scoring code as Check 2 baselines
 | s3-f1-lora-r16-lr1e4 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only` | 1e-4 | 560/1 | 0.278 | 0.501 | 0.250 | 0.111 | −0.018 (vs Snowflake); regression vs s3-d3 — LoRA LR likely too hot |
 | s3-f2-lora-r16-lr1e5 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only`, LR↓ | 1e-5 | 560/1 | 0.277 | 0.521 | 0.262 | 0.124 | −0.013 (vs Snowflake); different shape from s3-d3 — gifts +0.039, lobbying = base, but fact_pattern −0.040 vs d3 |
 | s3-g1-mnrl-hn-conclusion-lr1e6 | MNRL + 1 mined hard neg on `pos_conclusion_only` | 1e-6 | 560/1 | 0.059 | 0.142 | 0.052 | 0.048 | **−0.237 vs Snowflake** — false-negative pollution confirmed; val-slice climbed normally while 65-query collapsed |
+| s3-h1-paraphrase-aug-lr1e6 | MNRL + 1918 LLM paraphrases on `pos_conclusion_only` | 1e-6 | 665/1 | 0.287 | 0.536 | **0.270** | 0.114 | −0.003 vs s3-d3 — essentially tied; nDCG@10 +0.005; keyword target slice did NOT improve |
 
 ---
 
@@ -658,6 +659,75 @@ hard negatives we have.**
 
 ---
 
+### s3-h1-paraphrase-aug-lr1e6 — paraphrase augmentation (H4 test)  *(2026-05-22)*
+
+**Hypothesis (Sprint 3 lever 3, H4)**: s3-d3's residual deficit is
+shaped like training/eval distribution mismatch — training queries are
+FPPC-author NL paraphrases of conclusions, while eval includes keyword
+bags and multi-sentence fact patterns. Augment training with synthetic
+paraphrases in those two shapes; the model should specialize less
+narrowly to the FPPC question style.
+
+**Pipeline** (`scripts/build_paraphrases.py`):
+- Stratified-by-topic sample of 1000 training rows (val held out).
+- Local Ollama with `gemma4:e4b` (4B param), 8 concurrent workers.
+- Two paraphrases per row: `synthetic_keyword` (4-10 word keyword bag)
+  + `synthetic_fact_pattern` (2-4 sentence hypothetical).
+- 959 / 1000 successful (95.9%); 19 parse fails + 22 API errors.
+- 1918 paraphrased rows written to `data/training/paraphrased_pairs.jsonl`.
+- Each paraphrase carries the source row's positive doc(s) so the
+  contrastive pair `(synthetic_query, original_positive)` is intact.
+
+**Config**: identical to s3-d3 except `extra_pairs_paths` points to
+the paraphrased file. Training pool grows from 8,949 to 10,867 rows
+(665 steps vs d3's 560). All other hyperparameters held.
+
+**Result**: nDCG@5 = **0.287** (−0.003 vs s3-d3, within noise),
+MRR = 0.536 (−0.002 vs d3), **nDCG@10 = 0.270 (+0.005 vs d3)**.
+
+| Metric | base | s3-d3 | **s3-h1** | Δ vs d3 |
+|---|---:|---:|---:|---:|
+| nDCG@5 | 0.296 | 0.290 | 0.287 | −0.003 |
+| MRR | 0.522 | 0.538 | 0.536 | −0.002 |
+| nDCG@10 | 0.266 | 0.265 | **0.270** | **+0.005** |
+| COI | 0.106 | 0.124 | 0.114 | −0.010 |
+| campaign_finance | 0.397 | 0.363 | 0.364 | tied |
+| gifts (n=7) | 0.638 | 0.558 | 0.550 | −0.008 |
+| lobbying (n=5) | 0.660 | 0.658 | 0.658 | tied |
+| other | 0.283 | 0.295 | **0.307** | **+0.012** |
+| keyword | 0.237 | 0.190 | 0.184 | −0.006 |
+| natural_language | 0.322 | 0.330 | 0.330 | tied |
+| fact_pattern | 0.353 | 0.390 | 0.387 | −0.003 |
+
+**Interpretation — H4 essentially refuted at this scale.** The target
+slice (keyword queries) did *not* improve; it moved slightly down by
+−0.006. The other targeted slice (fact_pattern) also moved slightly
+down by −0.003. Both within noise. The augmentation did not produce
+the predicted distribution-mismatch fix.
+
+Possible explanations:
+1. **Paraphrase volume too small**. 1k source rows × 2 paraphrases is
+   only ~17% of the training pool. To meaningfully shift the
+   distribution we'd likely need to paraphrase all ~9k training rows
+   (2 hours of Ollama time) or use multiple paraphrases per row.
+2. **Paraphrase quality limited by model size**. Gemma4:e4b is 4B
+   params; the keyword paraphrases sometimes drift from the source
+   question's semantics. A bigger model (gemma4:26b, ~20 min/1k rows
+   estimated) might produce more discriminating paraphrases.
+3. **Distribution mismatch isn't the real bottleneck**. The keyword-
+   query deficit could be a corpus-structural ceiling (eval keyword
+   bags often use specific statute numbers that don't appear in
+   training questions), not a model capability that more training
+   diversity would fix.
+
+Val-slice climbed normally (0.822 → 0.86 acc@1 across steps 100-665),
+similar shape to d3 — no signal of overtraining or collapse.
+
+**Wall time**: ~60 min paraphrase generation + 36 min train + 8 min
+score = ~1h45m.
+
+---
+
 ### Tooling: PEFT integration  *(added 2026-05-22 during s3-f1 setup)*
 
 Sentence-transformers v5 stores the underlying transformer at
@@ -675,8 +745,7 @@ existing scorer can load without LoRA-specific handling.
 
 ## Sprint 3 outcome
 
-After 7 fine-tune attempts (s3-a1/a2/a3, s3-c1, s3-d1/d2/d3) on two
-mechanisms (lexical leakage, LR) the recipe converges to:
+After 11 fine-tune attempts on this corpus, the recipe converges to:
 
 - Base: Snowflake-arctic-embed-l-v2.0
 - Positive doc: `pos_conclusion_only` (no question text)
@@ -687,11 +756,80 @@ mechanisms (lexical leakage, LR) the recipe converges to:
 
 **Headline**: nDCG@5 0.290 (≈ base), MRR 0.538 (+0.016), COI 0.124 (+0.018).
 **SPEC threshold (0.33 nDCG@5) not yet hit**, but the trajectory is
-viable and there are several Sprint 4 levers to push it further. The
-"naive contrastive fine-tuning of strong pretrained models degrades"
-hypothesis is **refuted**: it degrades *under the standard 2e-5 recipe*
-with *question-leaked positives*; with both fixed it improves on the
-topics that matter.
+viable. The "naive contrastive fine-tuning of strong pretrained models
+degrades" hypothesis is **refuted**: it degrades *under the standard
+2e-5 recipe* with *question-leaked positives*; with both fixed it
+improves on the topics that matter.
+
+### Lever exploration summary (post-d3)
+
+After establishing d3 as the Sprint 3 winner, we explored four
+additional levers to see whether the recipe could be pushed further.
+All four returned, in increasing order of usefulness for future work:
+
+| Lever | Run | Result | Verdict |
+|---|---|---|---|
+| 4: hard negatives at LR=1e-6 | s3-g1 | nDCG@5 0.059 (−0.237) | **Refuted** — false-negative pollution; mined "negatives" are co-relevant opinions |
+| 1: more epochs (3 ep) | s3-e1 | nDCG@5 0.281 (−0.009 vs d3) | **Refuted** — mild overtraining; MRR/COI/NL regressed where d3 was strongest |
+| 3: paraphrase augmentation | s3-h1 | nDCG@5 0.287 (−0.003 vs d3) | **Inconclusive** — within noise; keyword target slice did not improve; needs larger paraphrase pool or better LLM |
+| 2: LoRA (r=16, LR=1e-5) | s3-f2 | nDCG@5 0.277 (−0.013 vs d3) | **Different shape** — gifts +0.039 / lobbying = base / fact_pattern −0.040 vs d3. Ensemble candidate. |
+
+**Key findings from the lever sweep**:
+
+1. **d3's recipe is robustly the best single-model on this data.**
+   None of the four levers produces a model that beats d3 on headline
+   nDCG@5 + MRR. Three of them (e1, g1, f2) regress; one (h1) ties
+   within noise.
+
+2. **The Sprint 4 levers worth pursuing are not what we expected.**
+   The "obvious" lever 2 (LoRA) produced a *different* model rather
+   than a *better* one — a useful piece of intelligence for ensemble
+   strategies but not a winner on its own. The "obvious" lever 4
+   (hard negatives) is actively toxic on this corpus and needs
+   either reranker-filtered mining or MarginMSE-with-teacher loss to
+   be usable.
+
+3. **The keyword-query deficit (−0.047 on d3) is sticky.** None of the
+   levers moved it materially. Paraphrase augmentation was the most
+   direct attempt and produced no improvement. This may be a
+   corpus-structural ceiling — eval keyword bags use specific statute
+   numbers that don't appear in training questions, so no amount of
+   query paraphrasing in training surfaces the right vocabulary.
+
+4. **The val-slice IR evaluator was misleading in three out of four
+   levers.** It climbed faster than d3's curve for e1, f1, f2, and h1
+   — even when 65-query degraded (e1, f1) or just tied (h1). It's
+   reliable for catching collapse (s3-a1 saturation; s3-d1 desaturation)
+   but useless for fine-grained "which checkpoint / which config is
+   actually better" decisions. **Lesson**: 65-query is the only
+   reliable signal for these decisions.
+
+### Sprint 4 directions (revised post-lever-sweep)
+
+Given what we learned, the levers worth Sprint 4 investment are:
+
+- **Ensemble d3 + f2.** Two valid, semantically-different fine-tunes
+  on the same data. Could be combined via per-query model selection
+  or score fusion. Most likely the cheapest path to beating either
+  alone on headline metrics.
+- **Cross-encoder-filtered hard negatives.** The mined negatives we
+  have are toxic, but the *concept* of hard negatives is sound. Use
+  a strong cross-encoder (BGE reranker, e.g.) to score each (query,
+  negative_candidate) pair and drop the ones it rates highly relevant.
+  Likely fixes the H3 / s3-g1 disaster.
+- **MarginMSE distillation from a reranker.** Replace MNRL's binary
+  positive/negative objective with continuous relevance scores. The
+  cleanest path to handling "this is genuinely co-relevant but I'd
+  rank it 3rd" instead of "push it away."
+- **Larger-scale paraphrase augmentation.** All 9k rows × 2-3
+  paraphrases via a 26B+ LLM. Gives H4 a fair shot at the right scale.
+
+Levers we'd *not* prioritize:
+- **More epochs at d3 LR**: refuted by e1.
+- **More aggressive LR for full FT**: refuted by Stage A.
+- **More LoRA rank / target modules**: shape stays the same per f1/f2;
+  more capacity wouldn't change the trade-off, would just shift along
+  the same gifts ⇄ fact_pattern curve.
 
 ---
 

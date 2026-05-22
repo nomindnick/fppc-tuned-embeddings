@@ -85,7 +85,7 @@ distractors as intended.
 
 ---
 
-## Sprint 3 — Initial fine-tuning sweep  *(2026-05-22: viable recipe found — see [experiment log](notes/sprint3_experiment_log.md))*
+## Sprint 3 — Initial fine-tuning sweep ✅ done  *(2026-05-22 — see [experiment log](notes/sprint3_experiment_log.md))*
 
 **Goal**: small grid; identify which base × loss config is worth pushing on.
 
@@ -110,15 +110,25 @@ fine-tune that beats the base on more metrics than it loses on.
    strong pretrained directions on a saturated 568M model. Fixed by
    dropping to 1e-6.
 
-**Winning recipe**: Snowflake-arctic-l-v2 + MNRL in-batch + `pos_conclusion_only`
-+ LR=1e-6 + bs=16 + max_seq=512 + bf16 + 1 epoch. **SPEC threshold (0.33
-nDCG@5) not yet hit**; Sprint 4 levers (LoRA, more epochs, paraphrase
-augmentation for keyword queries, hard-negative reintroduction at low LR)
-remain to push toward it. Stage B (positive-column ablation) is no longer
-relevant — `pos_conclusion_only` is the de facto positive choice.
+**Winning recipe (s3-d3)**: Snowflake-arctic-l-v2 + MNRL in-batch +
+`pos_conclusion_only` + LR=1e-6 + bs=16 + max_seq=512 + bf16 + 1 epoch.
 
-The full record of what was tried, observed numbers, and active hypotheses
-lives in `notes/sprint3_experiment_log.md`.
+**Lever sweep after d3**: explored four candidate improvements (more
+epochs, LoRA, paraphrase augmentation, hard-negatives-at-low-LR). None
+produced a model that beats d3 on headline nDCG@5 + MRR. Key findings:
+
+| Lever | Verdict |
+|---|---|
+| More epochs (s3-e1, 3 ep) | Refuted — mild overtraining |
+| Hard negatives at LR=1e-6 (s3-g1) | Catastrophically refuted — false-negative pollution (nDCG@5 0.059) |
+| Paraphrase augmentation (s3-h1, 1k×2 via gemma4:e4b) | Tied within noise; keyword target slice did not move |
+| LoRA r=16 Q/V LR=1e-5 (s3-f2) | Different model shape, not better — gifts/lobbying preserved, fact_pattern/campaign_finance lost. Ensemble candidate. |
+
+**SPEC threshold (≥ 0.33 nDCG@5) not hit**; Sprint 4 levers worth
+investment are now: (a) **ensemble d3 + f2**, (b) **cross-encoder-filtered
+hard negatives**, (c) **MarginMSE distillation from a reranker**,
+(d) **larger-scale paraphrase augmentation with a bigger LLM**. The
+full record lives in `notes/sprint3_experiment_log.md`.
 
 Original plan (kept for reference):
 
@@ -131,11 +141,30 @@ Original plan (kept for reference):
 
 ---
 
-## Sprint 4 — Winner tuning
+## Sprint 4 — Winner tuning  *(revised post Sprint 3 lever sweep)*
 
-- Hyperparameter sweep on the Sprint 3 winner (LR, warmup, batch, epochs).
-- Loss-wrapper variations (Matryoshka, hard-negative weight).
-- Best checkpoint scored on the full eval.
+Original plan was a hyperparameter sweep on the Sprint 3 winner.
+The Sprint 3 lever sweep changed that picture: the obvious knobs (LR,
+epochs, LoRA, hard negatives) are all either already-optimized or
+structurally toxic. The remaining-value levers are larger structural
+changes, not hyperparameter tuning:
+
+1. **Ensemble d3 + f2 (low cost, likely high value)**. Two valid
+   fine-tunes with different topic strengths. Score fusion or per-query
+   model selection on the 65-query eval.
+2. **Cross-encoder-filtered hard-negative mining**. Use a BGE reranker
+   (or similar) to drop "negatives" that are actually relevant before
+   training. Likely unlocks hard negatives without the s3-g1 disaster.
+3. **MarginMSE distillation**. Continuous relevance scores from a
+   reranker teacher; replaces MNRL's binary objective. The clean fix
+   for the false-negative-pollution mechanism.
+4. **Larger-scale paraphrase augmentation**. All 9k training rows × 2-3
+   paraphrases via a 26B+ LLM (vs s3-h1's 1k × 2 via gemma4:e4b). Gives
+   H4 a fair test at the right scale.
+
+Original hyperparameter levers (LR, warmup, batch, epochs, Matryoshka)
+are deprioritized — Sprint 3 found d3's recipe to be at or near the
+optimum for full FT on this corpus.
 
 ---
 
