@@ -40,6 +40,7 @@ corpus, using the same scoring code as Check 2 baselines
 | s3-e1-mnrl-conclusion-lr1e6-3ep | MNRL on `pos_conclusion_only`, +epochs | 1e-6 | 1680/3 | 0.281 | 0.507 | 0.257 | 0.103 | −0.015 (vs Snowflake); regression vs s3-d3 — mild overtraining |
 | s3-f1-lora-r16-lr1e4 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only` | 1e-4 | 560/1 | 0.278 | 0.501 | 0.250 | 0.111 | −0.018 (vs Snowflake); regression vs s3-d3 — LoRA LR likely too hot |
 | s3-f2-lora-r16-lr1e5 | LoRA r=16 Q/V α=32 + MNRL on `pos_conclusion_only`, LR↓ | 1e-5 | 560/1 | 0.277 | 0.521 | 0.262 | 0.124 | −0.013 (vs Snowflake); different shape from s3-d3 — gifts +0.039, lobbying = base, but fact_pattern −0.040 vs d3 |
+| s3-g1-mnrl-hn-conclusion-lr1e6 | MNRL + 1 mined hard neg on `pos_conclusion_only` | 1e-6 | 560/1 | 0.059 | 0.142 | 0.052 | 0.048 | **−0.237 vs Snowflake** — false-negative pollution confirmed; val-slice climbed normally while 65-query collapsed |
 
 ---
 
@@ -574,6 +575,86 @@ training since LoRA shouldn't overfit), but the structural shape is
 clear — moving on to lever 4 (hard negatives at low LR).
 
 **Wall time**: 30 min train + 8 min score.
+
+---
+
+### s3-g1-mnrl-hn-conclusion-lr1e6 — hard negatives at the d3 recipe  *(2026-05-22)*
+
+**Hypothesis (Sprint 3 lever 4)**: s3-a3 (full FT, LR=2e-5, *leaked*
+positive, 1 mined hard negative) was the worst Stage A run (−0.212 nDCG@5).
+With leakage fixed (`pos_conclusion_only`) and LR fixed (1e-6),
+re-adding 1 mined hard negative isolates whether the s3-a3 disaster
+was a *recipe* artifact or whether mined hard negatives are independently
+toxic for this corpus.
+
+**Config**: identical to s3-d3 except `use_hard_negatives=true,
+n_hard_negatives_per_row=1` (first negative from
+`hard_negatives.jsonl`, which is BM25 top-5 + same-statute top-5 deduped).
+
+**Result**: nDCG@5 = **0.059** (−0.237 vs base; **even worse than s3-a3's
+0.085**), MRR = 0.142, COI = 0.048.
+
+| Metric | base | s3-d3 | **s3-g1** | Δ vs base |
+|---|---:|---:|---:|---:|
+| nDCG@5 | 0.296 | 0.290 | **0.059** | **−0.237** |
+| MRR | 0.522 | 0.538 | **0.142** | **−0.380** |
+| nDCG@10 | 0.266 | 0.265 | 0.052 | −0.214 |
+| COI | 0.106 | 0.124 | 0.048 | −0.058 |
+| campaign_finance | 0.397 | 0.363 | 0.047 | −0.350 |
+| gifts (n=7) | 0.638 | 0.558 | 0.035 | −0.603 |
+| lobbying (n=5) | 0.660 | 0.658 | 0.212 | −0.448 |
+| other | 0.283 | 0.295 | 0.048 | −0.235 |
+| keyword | 0.237 | 0.190 | 0.062 | −0.175 |
+| natural_language | 0.322 | 0.330 | 0.076 | −0.246 |
+| fact_pattern | 0.353 | 0.390 | 0.033 | −0.320 |
+
+**The diagnostic shape** — val-slice climbed normally:
+
+| step | acc@1 | nDCG@5 |
+|---:|---:|---:|
+| 100 | 0.830 | 0.867 |
+| 200 | 0.824 | 0.868 |
+| 300 | 0.834 | 0.879 |
+| 400 | 0.851 | 0.891 |
+| 500 | 0.849 | 0.889 |
+| 560 | 0.851 | 0.890 |
+
+A *healthy*-looking curve. The model was learning *something*, just
+not what we want.
+
+**Interpretation — H3 (false-negative pollution) confirmed.** The mined
+"hard negatives" in this corpus are not distractors. BM25 top-5 of a
+question returns opinions that share statutes, vocabulary, and legal
+content with the positive. Same-statute mining is explicitly co-relevant.
+The training objective "push these away from the query" actively teaches
+the model: *if a query lexically matches multiple conclusions, only the
+opinion with my exact question structure is relevant; everything else
+should be far away.* Val-slice (query → own-conclusion) is *strengthened*
+by that rule. The 65-query distribution (real user searches expecting
+related opinions to retrieve together) is *destroyed*.
+
+This explains why g1 is *worse* than s3-a3 (full FT + leaked pos + same
+hard neg, nDCG@5 0.085): in s3-a3 the loss collapsed and the model
+learned essentially random separations. In g1 the loss converged
+*productively* in the wrong direction — the val-slice IR evaluator
+showed a perfectly healthy curve while it actively poisoned 65-query
+retrieval.
+
+**Both Stage A's s3-a3 and Stage G's s3-g1 reject the hard negatives
+we have**, at different LRs and different leakage states. The hard
+negatives are an independent toxicity source, not a downstream
+consequence of other mechanisms. Salvaging them would require either:
+- Cross-encoder reranker filtering (drop any "negative" the reranker
+  rates relevant); or
+- Mining from BM25 ranks 20–50 instead of 1–5 to escape the genuinely-
+  relevant top-band; or
+- MarginMSE loss with continuous relevance scores from a teacher,
+  replacing the binary positive/negative objective.
+
+All three are Sprint 4 / Phase 4 work. **For Sprint 3: don't use the
+hard negatives we have.**
+
+**Wall time**: 33 min train + 8 min score.
 
 ---
 
