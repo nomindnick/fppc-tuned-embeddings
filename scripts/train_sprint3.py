@@ -65,6 +65,50 @@ def load_hard_negatives(path: str) -> dict[str, list[dict]]:
     return by_id
 
 
+def derive_pos_conclusion_only(qa_text: str | None) -> str | None:
+    """Return everything from the CONCLUSION: marker onward; None if not found.
+
+    Used by the pos_conclusion_only column, which tests whether the lexical
+    leakage of the verbatim question into pos_qa_text is the dominant cause of
+    Stage A's collapse. Stripping the QUESTION section leaves only the
+    conclusion (and label) so the model cannot identity-match the query.
+    """
+    if not qa_text:
+        return None
+    delim = "\n\nCONCLUSION:"
+    idx = qa_text.find(delim)
+    if idx < 0:
+        return None
+    return qa_text[idx + 2:]
+
+
+def add_derived_pos_columns(rows: list[dict], positive_column: str) -> dict:
+    """Mutate rows to add the derived positive column if requested.
+
+    Returns a small report with derivation stats.
+    """
+    if positive_column != "pos_conclusion_only":
+        return {"derived": False}
+    n_total = 0
+    n_filled = 0
+    n_missing = 0
+    for r in rows:
+        n_total += 1
+        derived = derive_pos_conclusion_only(r.get("pos_qa_text"))
+        r["pos_conclusion_only"] = derived
+        if derived is None:
+            n_missing += 1
+        else:
+            n_filled += 1
+    return {
+        "derived": True,
+        "derived_column": positive_column,
+        "rows_total": n_total,
+        "rows_with_value": n_filled,
+        "rows_missing_delim": n_missing,
+    }
+
+
 def load_corpus_qa_text() -> dict[str, str]:
     """Build {opinion_id: qa_text} for the whole corpus.
 
@@ -296,6 +340,12 @@ def main():
     val_rows = load_jsonl(cfg["val_path"])
     val_ids = {r["opinion_id"] for r in val_rows}
     print(f"  pairs: {len(pairs)}  val: {len(val_rows)}  ({time.time() - t0:.1f}s)")
+
+    deriv_pairs = add_derived_pos_columns(pairs, cfg["positive_column"])
+    deriv_val = add_derived_pos_columns(val_rows, cfg["positive_column"])
+    if deriv_pairs.get("derived"):
+        print(f"  derived positive column: {json.dumps(deriv_pairs)}")
+        print(f"  derived val column:      {json.dumps(deriv_val)}")
 
     hard_negatives = None
     corpus_qa = None
