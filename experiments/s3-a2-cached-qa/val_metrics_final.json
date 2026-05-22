@@ -1,0 +1,14 @@
+{
+  "s3-a2-cached-qa_cosine_accuracy@1": 0.998158379373849,
+  "s3-a2-cached-qa_cosine_accuracy@3": 1.0,
+  "s3-a2-cached-qa_cosine_accuracy@5": 1.0,
+  "s3-a2-cached-qa_cosine_precision@5": 0.19999999999999998,
+  "s3-a2-cached-qa_cosine_precision@10": 0.09999999999999999,
+  "s3-a2-cached-qa_cosine_recall@5": 1.0,
+  "s3-a2-cached-qa_cosine_recall@10": 1.0,
+  "s3-a2-cached-qa_cosine_ndcg@5": 0.9993203126216785,
+  "s3-a2-cached-qa_cosine_ndcg@10": 0.9993203126216785,
+  "s3-a2-cached-qa_cosine_mrr@5": 0.9990791896869244,
+  "s3-a2-cached-qa_cosine_mrr@10": 0.9990791896869244,
+  "s3-a2-cached-qa_cosine_map@100": 0.9990791896869244
+}

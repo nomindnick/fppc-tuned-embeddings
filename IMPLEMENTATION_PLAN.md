@@ -85,9 +85,22 @@ distractors as intended.
 
 ---
 
-## Sprint 3 — Initial fine-tuning sweep
+## Sprint 3 — Initial fine-tuning sweep  *(in progress — see [experiment log](notes/sprint3_experiment_log.md))*
 
 **Goal**: small grid; identify which base × loss config is worth pushing on.
+
+**Status (2026-05-21)**: Stage A (loss bake-off on Snowflake-arctic-l-v2 at
+LR=2e-5) and a single Stage C run (BGE-large with the same recipe) all
+significantly *regressed* against their respective baselines (−0.10 nDCG@5,
+consistent across base models). Diagnosis points to the recipe being too
+aggressive (LR too high and/or 1 epoch already over-trains), not the loss
+or base model choice. **Stage B (positive-column ablation) is deferred**
+until we find a recipe that beats baseline.
+
+The full record of what was tried, observed numbers, and active hypotheses
+lives in `notes/sprint3_experiment_log.md`. New experiments append there.
+
+Original plan (kept for reference):
 
 - Base models: top 1–2 picks from Sprint 1.
 - Losses: `MultipleNegativesRankingLoss`, `CachedMultipleNegativesRankingLoss`

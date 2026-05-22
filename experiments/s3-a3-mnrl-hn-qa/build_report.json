@@ -1,0 +1,15 @@
+{
+  "build_report": {
+    "input_pairs": 10806,
+    "dropped_val_overlap": 543,
+    "dropped_poscol_null": 0,
+    "dropped_insufficient_hard_negs": 0,
+    "training_rows": 10263
+  },
+  "val_report": {
+    "val_rows": 543,
+    "val_dropped_poscol_null": 0
+  },
+  "wall_time_s": 3932.7,
+  "smoke": false
+}

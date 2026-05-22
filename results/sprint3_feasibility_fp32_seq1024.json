@@ -1,0 +1,34 @@
+{
+  "model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "max_seq_length": 1024,
+  "torch_version": "2.5.1+rocm6.2",
+  "device": "cuda",
+  "mnrl": {
+    "loss": "MultipleNegativesRankingLoss",
+    "max_batch_size": 8,
+    "trace": {
+      "bs=4": "ok (peak=41.84 GB)",
+      "bs=8": "ok (peak=81.34 GB)",
+      "bs=16": "OOM: HIP out of memory. Tried to allocate 256.00 MiB. GPU 0 has a total capacity of 93.75 GiB of which 161.16 MiB is free. Of"
+    }
+  },
+  "mnrl_with_1hn": {
+    "loss": "MultipleNegativesRankingLoss+1hn",
+    "max_batch_size": 4,
+    "trace": {
+      "bs=4": "ok (peak=93.10 GB)",
+      "bs=8": "OOM: HIP out of memory. Tried to allocate 512.00 MiB. GPU 0 has a total capacity of 93.75 GiB of which 155.16 MiB is free. Of"
+    }
+  },
+  "cached_mnrl": {
+    "loss": "CachedMultipleNegativesRankingLoss",
+    "max_mini_batch_size": 16,
+    "trace": {
+      "mini_bs=4/global=128": "ok (peak=93.07 GB)",
+      "mini_bs=8/global=128": "ok (peak=44.06 GB)",
+      "mini_bs=16/global=128": "ok (peak=83.85 GB)",
+      "mini_bs=24/global=128": "OOM: HIP out of memory. Tried to allocate 1.50 GiB. GPU 0 has a total capacity of 93.75 GiB of which 1.05 GiB is free. Of the"
+    }
+  },
+  "wall_time_s": 658.0
+}

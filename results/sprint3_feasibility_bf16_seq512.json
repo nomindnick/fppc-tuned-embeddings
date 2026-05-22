@@ -1,0 +1,29 @@
+{
+  "model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "max_seq_length": 512,
+  "bf16": true,
+  "torch_version": "2.5.1+rocm6.2",
+  "device": "cuda",
+  "mnrl": {
+    "loss": "MultipleNegativesRankingLoss",
+    "max_batch_size": 16,
+    "trace": {
+      "bs=4": "ok (peak=14.60 GB)",
+      "bs=8": "ok (peak=25.93 GB)",
+      "bs=16": "ok (peak=48.61 GB)",
+      "bs=32": "OOM: HIP out of memory. Tried to allocate 512.00 MiB. GPU 0 has a total capacity of 93.75 GiB of which 16.40 MiB is free. Of "
+    }
+  },
+  "mnrl_with_1hn": {
+    "loss": "MultipleNegativesRankingLoss+1hn",
+    "max_batch_size": 16,
+    "trace": {
+      "bs=4": "ok (peak=93.39 GB)",
+      "bs=8": "ok (peak=37.78 GB)",
+      "bs=16": "ok (peak=71.74 GB)",
+      "bs=24": "OOM: HIP out of memory. Tried to allocate 384.00 MiB. GPU 0 has a total capacity of 93.75 GiB of which 336.40 MiB is free. Of"
+    }
+  },
+  "cached_mnrl": null,
+  "wall_time_s": 83.4
+}

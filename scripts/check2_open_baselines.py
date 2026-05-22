@@ -10,6 +10,9 @@ For each model:
   4. Score using the eval harness's metric functions
   5. Persist results JSON and a row in the comparison table
 
+Core encode/retrieve/score logic lives in `scripts/_eval_lib.py` so Sprint 3
+fine-tune scoring uses the exact same code path.
+
 Designed to run on CPU; uses sentence-transformers.
 """
 
@@ -17,29 +20,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import pickle
-import sys
-import time
 from dataclasses import dataclass
 
 import numpy as np
 
-# Reuse the eval harness scoring logic to get apples-to-apples numbers
-sys.path.insert(0, "/home/nick/Projects/fppc-opinions-eval")
-from src.scorer import (  # type: ignore[import-not-found]
-    aggregate_metrics,
-    compute_mrr,
-    compute_ndcg,
-    compute_precision,
-    compute_recall,
-)
+import _eval_lib as evl
 
-EVAL_PATH = "/home/nick/Projects/fppc-opinions-eval/eval/dataset.json"
-CORPUS_DIR = "/home/nick/Projects/fppc-opinions-corpus/data/extracted"
 RESULTS_DIR = "/home/nick/Projects/fppc-tuned-embeddings/results"
-INDEX_CACHE_DIR = "/home/nick/Projects/fppc-tuned-embeddings/data/indexes"
 
 
 # ---------------------------------------------------------------------------
@@ -81,10 +70,6 @@ MODELS: dict[str, ModelConfig] = {
         hf_id="nomic-ai/nomic-embed-text-v1.5",
         query_prefix="search_query: ",
         doc_prefix="search_document: ",
-        # Native cap is 8192 but qa_text p90 ≈ 649 tokens, p99 ≈ 2296.
-        # 1024 covers ~98% of docs without truncation and keeps CPU runtime
-        # tractable. The 2-3% of longer docs get truncated; we accept that
-        # for the baseline pass.
         max_seq_length=1024,
         trust_remote_code=True,
         notes="Matryoshka; max_seq capped at 1024 for CPU runtime (covers ~98% of docs).",
@@ -94,9 +79,6 @@ MODELS: dict[str, ModelConfig] = {
         hf_id="Alibaba-NLP/gte-modernbert-base",
         query_prefix="",
         doc_prefix="",
-        # Native 8192 cap; using 1024 to keep apples-to-apples runtime with
-        # the other open-model baselines and because per-corpus tokens p90
-        # already fits well under 1024.
         max_seq_length=1024,
         trust_remote_code=False,
         notes="ModernBERT encoder, 8192 native context, no prompt prefix.",
@@ -104,8 +86,6 @@ MODELS: dict[str, ModelConfig] = {
     "qwen3-embed-0.6b": ModelConfig(
         name="qwen3-embed-0.6b",
         hf_id="Qwen/Qwen3-Embedding-0.6B",
-        # Qwen3-Embedding takes an instruction in the query prompt; doc text
-        # is encoded raw. Instruction wording matters for the task framing.
         query_prefix=(
             "Instruct: Given a legal question, retrieve the FPPC advisory "
             "opinion that addresses it.\nQuery: "
@@ -128,174 +108,27 @@ MODELS: dict[str, ModelConfig] = {
 
 
 # ---------------------------------------------------------------------------
-# Corpus + query loading
+# Run one open-model baseline via the shared eval lib
 # ---------------------------------------------------------------------------
 
-def load_corpus_texts() -> tuple[list[str], list[str]]:
-    """Return (opinion_ids, qa_texts) walked in the same order every run."""
-    ids: list[str] = []
-    texts: list[str] = []
-    for year_dir in sorted(os.listdir(CORPUS_DIR)):
-        year_path = os.path.join(CORPUS_DIR, year_dir)
-        if not os.path.isdir(year_path):
-            continue
-        for filename in sorted(os.listdir(year_path)):
-            if not filename.endswith(".json"):
-                continue
-            with open(os.path.join(year_path, filename)) as f:
-                op = json.load(f)
-            oid = op.get("id", filename.replace(".json", ""))
-            qa = (op.get("embedding") or {}).get("qa_text") or ""
-            if len(qa.strip()) < 20:
-                # Same fallback the search-lab semantic baseline uses
-                qa = (op.get("content") or {}).get("full_text") or ""
-            ids.append(oid)
-            texts.append(qa.strip() or " ")
-    return ids, texts
-
-
-def load_eval() -> list[dict]:
-    with open(EVAL_PATH) as f:
-        return json.load(f)["queries"]
-
-
-# ---------------------------------------------------------------------------
-# Embedding
-# ---------------------------------------------------------------------------
-
-def embed_corpus(cfg: ModelConfig, ids: list[str], texts: list[str]) -> np.ndarray:
-    """Embed all corpus docs with a single load of the model. L2-normalized."""
+def run_for_model(cfg: ModelConfig) -> dict:
     from sentence_transformers import SentenceTransformer
-
-    cache_path = os.path.join(
-        INDEX_CACHE_DIR, f"corpus_embeddings_{cfg.name}_qa_text.npy"
-    )
-    ids_path = os.path.join(
-        INDEX_CACHE_DIR, f"corpus_embeddings_{cfg.name}_ids.json"
-    )
-    os.makedirs(INDEX_CACHE_DIR, exist_ok=True)
-
-    if os.path.exists(cache_path) and os.path.exists(ids_path):
-        cached_ids = json.load(open(ids_path))
-        if cached_ids == ids:
-            print(f"  [cache] Loaded {cfg.name} corpus embeddings from disk")
-            return np.load(cache_path)
 
     print(f"  Loading model: {cfg.hf_id}")
     model = SentenceTransformer(cfg.hf_id, trust_remote_code=cfg.trust_remote_code)
-    if cfg.max_seq_length is not None:
-        model.max_seq_length = cfg.max_seq_length
 
-    inputs = [cfg.doc_prefix + t for t in texts]
-    print(f"  Embedding {len(inputs)} docs (max_seq_length={model.max_seq_length})…")
-    t0 = time.time()
-    vecs = model.encode(
-        inputs,
+    return evl.score_model_on_eval(
+        model=model,
+        engine_name=cfg.name,
+        hf_id=cfg.hf_id,
+        query_prefix=cfg.query_prefix,
+        doc_prefix=cfg.doc_prefix,
+        max_seq_length=cfg.max_seq_length,
+        notes=cfg.notes,
+        cache_key=cfg.name,  # cache corpus embeddings by short model name
         batch_size=32,
-        show_progress_bar=True,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
+        top_k=20,
     )
-    print(f"  Done in {time.time() - t0:.1f}s. Shape: {vecs.shape}")
-
-    np.save(cache_path, vecs.astype(np.float32))
-    with open(ids_path, "w") as f:
-        json.dump(ids, f)
-    return vecs.astype(np.float32)
-
-
-def embed_queries(cfg: ModelConfig, query_texts: list[str]) -> np.ndarray:
-    from sentence_transformers import SentenceTransformer
-
-    model = SentenceTransformer(cfg.hf_id, trust_remote_code=cfg.trust_remote_code)
-    if cfg.max_seq_length is not None:
-        model.max_seq_length = cfg.max_seq_length
-    inputs = [cfg.query_prefix + q for q in query_texts]
-    vecs = model.encode(
-        inputs,
-        batch_size=32,
-        show_progress_bar=False,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-    )
-    return vecs.astype(np.float32)
-
-
-# ---------------------------------------------------------------------------
-# Retrieval + scoring
-# ---------------------------------------------------------------------------
-
-def evaluate_query(query: dict, results: list[str]) -> dict:
-    judgments = {j["opinion_id"]: j["score"] for j in query["relevance_judgments"]}
-    metrics = {
-        "mrr": compute_mrr(results, judgments),
-        "ndcg@5": compute_ndcg(results, judgments, 5),
-        "ndcg@10": compute_ndcg(results, judgments, 10),
-        "precision@5": compute_precision(results, judgments, 5),
-        "precision@10": compute_precision(results, judgments, 10),
-        "recall@10": compute_recall(results, judgments, 10),
-        "recall@20": compute_recall(results, judgments, 20),
-    }
-    return {
-        "query_id": query["id"],
-        "query_text": query["text"],
-        "query_type": query.get("type", "unknown"),
-        "query_topic": query.get("topic", "unknown"),
-        "num_results": len(results),
-        "results": results,
-        "metrics": metrics,
-    }
-
-
-def run_for_model(cfg: ModelConfig) -> dict:
-    print(f"\n=== {cfg.name} ===")
-    ids, texts = load_corpus_texts()
-    print(f"Corpus: {len(ids)} opinions")
-
-    queries = load_eval()
-    print(f"Eval queries: {len(queries)}")
-
-    doc_vecs = embed_corpus(cfg, ids, texts)
-    query_vecs = embed_queries(cfg, [q["text"] for q in queries])
-
-    # Retrieval — cosine via dot product on L2-normalized vectors
-    # Score matrix (Q x D) — small enough at 65 x 14k to materialize
-    print("Retrieving top-20 for each query…")
-    sim = query_vecs @ doc_vecs.T  # (n_queries, n_docs)
-    top_k_idx = np.argpartition(-sim, kth=20, axis=1)[:, :20]
-    # Sort the top-20 indices by score descending per row
-    sorted_top = []
-    for row_i, idxs in enumerate(top_k_idx):
-        scores_row = sim[row_i, idxs]
-        order = np.argsort(-scores_row)
-        sorted_top.append([ids[idxs[j]] for j in order])
-
-    per_query = [evaluate_query(q, sorted_top[i]) for i, q in enumerate(queries)]
-
-    overall = aggregate_metrics(per_query)
-    by_type = _agg_by(per_query, "query_type")
-    by_topic = _agg_by(per_query, "query_topic")
-
-    return {
-        "engine_name": cfg.name,
-        "hf_id": cfg.hf_id,
-        "notes": cfg.notes,
-        "max_seq_length": cfg.max_seq_length,
-        "query_prefix": cfg.query_prefix,
-        "doc_prefix": cfg.doc_prefix,
-        "n_queries": len(queries),
-        "overall": overall,
-        "by_type": by_type,
-        "by_topic": by_topic,
-        "per_query": per_query,
-    }
-
-
-def _agg_by(per_query: list[dict], key: str) -> dict[str, dict]:
-    buckets: dict[str, list[dict]] = {}
-    for qr in per_query:
-        buckets.setdefault(qr[key], []).append(qr)
-    return {k: aggregate_metrics(v) for k, v in buckets.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -343,27 +176,21 @@ def evaluate_openai_baseline_from_cached() -> dict | None:
     ids = data["opinion_ids"]
     doc_vecs = data["embeddings"]  # already L2-normalized per search-lab code
 
-    queries = load_eval()
+    queries = evl.load_eval()
     client = OpenAI(api_key=api_key)
     resp = client.embeddings.create(
         model="text-embedding-3-small",
         input=[q["text"] for q in queries],
     )
     q_vecs = np.array([r.embedding for r in resp.data], dtype=np.float32)
-    # Normalize
     norms = np.linalg.norm(q_vecs, axis=1, keepdims=True)
     norms[norms == 0] = 1
     q_vecs /= norms
 
-    sim = q_vecs @ doc_vecs.T
-    top_k_idx = np.argpartition(-sim, kth=20, axis=1)[:, :20]
-    sorted_top = []
-    for row_i, idxs in enumerate(top_k_idx):
-        scores_row = sim[row_i, idxs]
-        order = np.argsort(-scores_row)
-        sorted_top.append([ids[idxs[j]] for j in order])
+    sorted_top = evl.retrieve_top_k(q_vecs, doc_vecs, ids, k=20)
+    per_query = [evl.evaluate_query(q, sorted_top[i]) for i, q in enumerate(queries)]
 
-    per_query = [evaluate_query(q, sorted_top[i]) for i, q in enumerate(queries)]
+    from src.scorer import aggregate_metrics  # type: ignore[import-not-found]
     return {
         "engine_name": "text-embedding-3-small",
         "hf_id": "openai/text-embedding-3-small",
@@ -373,8 +200,8 @@ def evaluate_openai_baseline_from_cached() -> dict | None:
         "doc_prefix": "",
         "n_queries": len(queries),
         "overall": aggregate_metrics(per_query),
-        "by_type": _agg_by(per_query, "query_type"),
-        "by_topic": _agg_by(per_query, "query_topic"),
+        "by_type": evl.aggregate_by(per_query, "query_type"),
+        "by_topic": evl.aggregate_by(per_query, "query_topic"),
         "per_query": per_query,
     }
 
