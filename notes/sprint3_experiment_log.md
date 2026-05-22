@@ -35,6 +35,7 @@ corpus, using the same scoring code as Check 2 baselines
 | **BGE-large base (untuned)** | — | — | — | **0.282** | 0.495 | — | 0.090 | — |
 | s3-c1-bge-mnrl-qa | MNRL | 2e-5 | 642/1 | 0.181 | 0.396 | 0.158 | 0.099 | **−0.101** (vs BGE) |
 | s3-d1-mnrl-conclusion-qa | MNRL on `pos_conclusion_only` | 2e-5 | 560/1 | 0.230 | 0.426 | 0.223 | 0.083 | **−0.066** (vs Snowflake) |
+| **s3-d2-mnrl-conclusion-lr5e6** | MNRL on `pos_conclusion_only`, LR↓ | **5e-6** | 560/1 | **0.275** | **0.504** | 0.253 | 0.102 | **−0.021** (vs Snowflake) |
 
 ---
 
@@ -249,6 +250,83 @@ shaped in the way an LR-induced forgetting story predicts.
 
 ---
 
+### s3-d2-mnrl-conclusion-lr5e6 — same as s3-d1 but LR=5e-6  *(2026-05-22)*
+
+**Hypothesis (H1, residual)**: With the lexical-leakage shortcut removed
+by s3-d1, the remaining −0.066 nDCG@5 gap is consistent with LR-driven
+catastrophic forgetting (gifts/lobbying still hurt by ~0.15, COI flat).
+Dropping LR from 2e-5 to 5e-6 should let the model adapt to FPPC retrieval
+without overwriting its strongest pretrained directions.
+
+**Config**: identical to s3-d1 in every dimension except
+`learning_rate = 5e-6` (vs 2e-5). Same data, same loss, same epochs, same
+prefix, same seed.
+
+**Result**: nDCG@5 = **0.275** (−0.021 vs Snowflake base 0.296),
+MRR = 0.504, COI = 0.102.
+
+| Topic | n | Base | s3-d1 | **s3-d2** | Δ vs base |
+|---|---:|---:|---:|---:|---:|
+| conflicts_of_interest | 29 | 0.106 | 0.083 | 0.102 | −0.004 |
+| campaign_finance | 14 | 0.397 | 0.301 | 0.387 | −0.010 |
+| gifts_honoraria | 7 | 0.638 | 0.490 | 0.554 | −0.084 |
+| lobbying | 5 | 0.660 | 0.507 | 0.618 | −0.042 |
+| other | 10 | 0.283 | 0.238 | 0.252 | −0.031 |
+
+| Type | n | Base | s3-d1 | **s3-d2** | Δ vs base |
+|---|---:|---:|---:|---:|---:|
+| keyword | 26 | 0.237 | 0.173 | 0.196 | −0.041 |
+| natural_language | 22 | 0.322 | 0.247 | 0.304 | −0.018 |
+| **fact_pattern** | 17 | 0.353 | 0.297 | **0.358** | **+0.005** |
+
+**Val-slice IR evaluator** during training (482 queries / 482 docs):
+
+| step | acc@1 | nDCG@5 |
+|---:|---:|---:|
+| 100 | 0.859 | 0.898 |
+| 200 | 0.871 | 0.907 |
+| **300** | **0.890** | **0.918** |
+| 400 | 0.882 | 0.915 |
+| 500 | 0.876 | 0.911 |
+| 560 | 0.880 | 0.914 |
+
+Peak at step 300 with a mild softening through step 560 — hint of mild
+overtraining in the back half. Without intermediate checkpoints saved
+we can't 65-query-eval the step-300 model, but a future run could.
+
+**Interpretation — H1 is the residual mechanism (mostly).**
+
+Recovery vs s3-d1 is **+0.045 nDCG@5** with the LR drop as the only
+variable. Every topic recovered. Every query type recovered. The shape:
+
+1. **fact_pattern beats base** (+0.005, n=17). First slice in any tuned
+   model to clear baseline. Fact patterns are multi-sentence hypothetical
+   queries — the closest distributional match to our training questions
+   (FPPC-author paraphrases of conclusions). Fine-tuning *helps* exactly
+   where the training distribution looks most like the eval distribution.
+2. **natural_language nearly recovers** (−0.018). Same distribution
+   intuition: NL queries are sentence-shaped, partially overlap with
+   training questions.
+3. **keyword queries remain the deficit** (−0.041). Keyword bags
+   ("Section 87103(a) disqualification...") look nothing like training
+   questions. This is the H4 (distribution mismatch) signature: the
+   model is now good at one input shape but worse at the other.
+4. **gifts_honoraria still −0.084**, though much better than s3-d1's
+   −0.148. Only 7 queries; noise floor is meaningful but the topic was
+   genuinely the strongest base capability and the hardest to preserve.
+
+**Diagnosis**: At LR=5e-6, ~80% of the gap closes. The recipe is now
+*nearly* viable — the remaining ~0.02 nDCG@5 gap is roughly split between:
+- Residual catastrophic forgetting on the strongest base topics
+  (gifts/lobbying), which lower LR / shorter training / LoRA could
+  address.
+- Query-distribution mismatch (H4) on keyword queries, which paraphrase
+  augmentation could address.
+
+**Wall time**: 30.6 min train + 8 min score.
+
+---
+
 ## What Stage A taught us
 
 1. **All three losses degrade the base model.** Not "one wins by a small
@@ -274,16 +352,30 @@ baseline; comparing four flavors of "broken" tells us nothing.
 
 (Numbered for easy reference; not yet run.)
 
-### H1 — LR is wrecking the pretrained weights
+### H1 — LR is wrecking the pretrained weights  *(CONFIRMED AS RESIDUAL MECHANISM 2026-05-22 by s3-d2)*
 
 The standard 2e-5 fine-tuning LR is well-suited to weaker base models.
 Snowflake-arctic-l-v2 is already saturated on general retrieval and
 high-quality. Lower LRs (1e-6 to 1e-5) should let it specialize without
 overwriting general structure.
 
-**Proposed runs (Sprint 3.1)**:
-- `s3.1-lr5e-6` — Same config as s3-a3 (MNRL+1hn) but LR=5e-6.
-- `s3.1-lr1e-6` — Same but LR=1e-6.
+**Outcome**: s3-d2 (LR=5e-6 on the leakage-free recipe) recovered +0.045
+nDCG@5 vs s3-d1 (LR=2e-5 on same data). Gap to base shrank from −0.066 to
+−0.021. fact_pattern queries (n=17) beat base by +0.005 — first slice of
+any tuned model to clear baseline. So **LR was the second mechanism**;
+the question is now how to close the residual ~0.02 gap.
+
+**Candidate continuations** (in rough order of cost):
+- `s3-d3-lr1e-6` — drop LR one more step. If gap closes further, LR is
+  still the binding constraint. If it plateaus, we've found the LR limit
+  and need a different lever.
+- `s3-d4-checkpoint-sweep` — re-run s3-d2 with checkpoints every 100
+  steps + 65-query eval at each. Val-slice peaked at step 300 then
+  softened; the step-300 checkpoint may already beat base.
+- Reintroduce hard negatives at LR=5e-6 (test if false-negative
+  pollution was real on top of leakage+LR, or if it was just downstream).
+- LoRA on Snowflake (rank=16 or 32 on attention layers; protects base
+  capabilities by construction).
 
 ### H2 — Even 1 epoch is too long
 
@@ -388,6 +480,13 @@ publishable negative result.
   −0.066 residual gap and unchanged COI suggest a second mechanism
   remains. Next test: hold the conclusion-only data, drop LR 2e-5 → 5e-6
   to probe the residual H1 (LR) story.
+- **2026-05-22**: s3-d2 result (same as s3-d1 but LR=5e-6): nDCG@5
+  **0.275** (−0.021 vs base, vs s3-d1's −0.066). +0.045 nDCG@5 recovered
+  from a single-knob LR drop. **H1 confirmed as the residual mechanism.**
+  fact_pattern queries beat base (+0.005, n=17) — first slice of any
+  tuned model to clear baseline. Awaiting user call on next experiment:
+  s3-d3 LR=1e-6 (extend the LR ramp), or pivot to LoRA / checkpoint
+  sweep / H4 paraphrase augmentation to close the residual ~0.02 gap.
 
 ---
 
