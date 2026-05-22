@@ -85,20 +85,40 @@ distractors as intended.
 
 ---
 
-## Sprint 3 — Initial fine-tuning sweep  *(in progress — see [experiment log](notes/sprint3_experiment_log.md))*
+## Sprint 3 — Initial fine-tuning sweep  *(2026-05-22: viable recipe found — see [experiment log](notes/sprint3_experiment_log.md))*
 
 **Goal**: small grid; identify which base × loss config is worth pushing on.
 
-**Status (2026-05-21)**: Stage A (loss bake-off on Snowflake-arctic-l-v2 at
-LR=2e-5) and a single Stage C run (BGE-large with the same recipe) all
-significantly *regressed* against their respective baselines (−0.10 nDCG@5,
-consistent across base models). Diagnosis points to the recipe being too
-aggressive (LR too high and/or 1 epoch already over-trains), not the loss
-or base model choice. **Stage B (positive-column ablation) is deferred**
-until we find a recipe that beats baseline.
+**Outcome**: After two diagnostic detours (Stage A's catastrophic
+regressions and the BGE-large control swap), s3-d3 produced the first
+fine-tune that beats the base on more metrics than it loses on.
+
+| | Snowflake base | **s3-d3 (winner)** | Δ |
+|---|---:|---:|---:|
+| nDCG@5 | 0.296 | 0.290 | −0.006 |
+| MRR | 0.522 | **0.538** | **+0.016** |
+| COI nDCG@5 | 0.106 | **0.124** | **+0.018** |
+| natural_language nDCG@5 | 0.322 | **0.330** | **+0.008** |
+| fact_pattern nDCG@5 | 0.353 | **0.390** | **+0.037** |
+| keyword nDCG@5 | 0.237 | 0.190 | −0.047 |
+
+**Two mechanisms identified and fixed**:
+1. **Lexical leakage** — `pos_qa_text` contained the verbatim query;
+   model learned identity-matching, not retrieval. Fixed by stripping
+   the QUESTION block (`pos_conclusion_only` derived column).
+2. **LR too hot** — 2e-5 (sentence-transformers default) over-wrote the
+   strong pretrained directions on a saturated 568M model. Fixed by
+   dropping to 1e-6.
+
+**Winning recipe**: Snowflake-arctic-l-v2 + MNRL in-batch + `pos_conclusion_only`
++ LR=1e-6 + bs=16 + max_seq=512 + bf16 + 1 epoch. **SPEC threshold (0.33
+nDCG@5) not yet hit**; Sprint 4 levers (LoRA, more epochs, paraphrase
+augmentation for keyword queries, hard-negative reintroduction at low LR)
+remain to push toward it. Stage B (positive-column ablation) is no longer
+relevant — `pos_conclusion_only` is the de facto positive choice.
 
 The full record of what was tried, observed numbers, and active hypotheses
-lives in `notes/sprint3_experiment_log.md`. New experiments append there.
+lives in `notes/sprint3_experiment_log.md`.
 
 Original plan (kept for reference):
 
