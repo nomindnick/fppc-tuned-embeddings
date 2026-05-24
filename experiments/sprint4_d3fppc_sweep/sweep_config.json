@@ -1,0 +1,23 @@
+{
+  "run_id": "sprint4_d3fppc_sweep",
+  "model_dir": "/home/nick/Projects/fppc-tuned-embeddings/data/models/sprint4_d3fppc",
+  "sem_npy": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint4_d3fppc_qa_text.npy",
+  "sem_ids_json": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint4_d3fppc_ids.json",
+  "query_prefix": "query: ",
+  "max_seq_length": 512,
+  "semantic_only_path": false,
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint4_d3fppc_sweep",
+  "trials": [
+    {"label": "w0.30_cb1.5", "w_bm25": 0.70, "w_sem": 0.30, "cb_threshold": 1.5},
+    {"label": "w0.35_cb1.5", "w_bm25": 0.65, "w_sem": 0.35, "cb_threshold": 1.5},
+    {"label": "w0.40_cb1.5", "w_bm25": 0.60, "w_sem": 0.40, "cb_threshold": 1.5},
+    {"label": "w0.45_cb1.5", "w_bm25": 0.55, "w_sem": 0.45, "cb_threshold": 1.5},
+    {"label": "w0.50_cb1.5", "w_bm25": 0.50, "w_sem": 0.50, "cb_threshold": 1.5},
+    {"label": "w0.40_cb2.0_ALLPATH", "w_bm25": 0.60, "w_sem": 0.40, "cb_threshold": 2.0,
+     "semantic_only_path": true},
+    {"label": "w0.45_cb2.0_ALLPATH", "w_bm25": 0.55, "w_sem": 0.45, "cb_threshold": 2.0,
+     "semantic_only_path": true},
+    {"label": "w0.50_cb2.0_ALLPATH", "w_bm25": 0.50, "w_sem": 0.50, "cb_threshold": 2.0,
+     "semantic_only_path": true}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "sprint4_d3fppc_cosine_accuracy@1": 0.8734439834024896,
+  "sprint4_d3fppc_cosine_accuracy@3": 0.9087136929460581,
+  "sprint4_d3fppc_cosine_accuracy@5": 0.9253112033195021,
+  "sprint4_d3fppc_cosine_precision@5": 0.18506224066390045,
+  "sprint4_d3fppc_cosine_precision@10": 0.09522821576763486,
+  "sprint4_d3fppc_cosine_recall@5": 0.9253112033195021,
+  "sprint4_d3fppc_cosine_recall@10": 0.9522821576763485,
+  "sprint4_d3fppc_cosine_ndcg@5": 0.9018480944251243,
+  "sprint4_d3fppc_cosine_ndcg@10": 0.9101640272219542,
+  "sprint4_d3fppc_cosine_mrr@5": 0.8939834024896266,
+  "sprint4_d3fppc_cosine_mrr@10": 0.8971785878943553,
+  "sprint4_d3fppc_cosine_map@100": 0.8985454955383676
+}

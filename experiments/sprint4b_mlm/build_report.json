@@ -1,0 +1,7 @@
+{
+  "wall_time_s": 10758.6,
+  "n_texts": 13469,
+  "n_chunks": 56528,
+  "final_train_loss": 4.7163,
+  "smoke": false
+}

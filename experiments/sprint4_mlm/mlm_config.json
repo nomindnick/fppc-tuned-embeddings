@@ -1,0 +1,16 @@
+{
+  "run_id": "sprint4_mlm",
+  "base_model": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "max_seq_length": 512,
+  "batch_size": 16,
+  "learning_rate": 1e-5,
+  "warmup_ratio": 0.10,
+  "weight_decay": 0.01,
+  "mlm_probability": 0.15,
+  "epochs": 2,
+  "max_chunks_per_opinion": 10,
+  "bf16": true,
+  "seed": 20260523,
+  "model_save_dir": "/home/nick/Projects/fppc-tuned-embeddings/data/models/snowflake_fppc_mlm",
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint4_mlm"
+}

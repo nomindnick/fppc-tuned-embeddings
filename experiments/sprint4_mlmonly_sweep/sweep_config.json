@@ -1,0 +1,14 @@
+{
+  "run_id": "sprint4_mlmonly_sweep",
+  "model_dir": "/home/nick/Projects/fppc-tuned-embeddings/data/models/snowflake_fppc_mlm",
+  "sem_npy": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint4_mlmonly_qa_text.npy",
+  "sem_ids_json": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint4_mlmonly_ids.json",
+  "query_prefix": "query: ",
+  "max_seq_length": 512,
+  "semantic_only_path": false,
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint4_mlmonly_sweep",
+  "trials": [
+    {"label": "w0.30_cb1.5", "w_bm25": 0.70, "w_sem": 0.30, "cb_threshold": 1.5},
+    {"label": "w0.40_cb1.5", "w_bm25": 0.60, "w_sem": 0.40, "cb_threshold": 1.5}
+  ]
+}
