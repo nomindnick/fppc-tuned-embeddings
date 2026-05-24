@@ -1,0 +1,15 @@
+{
+  "run_id": "sprint5b_snow_cb15",
+  "model_dir": "Snowflake/snowflake-arctic-embed-l-v2.0",
+  "sem_npy": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_snowflake-arctic-embed-l-v2.0_qa_text.npy",
+  "sem_ids_json": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_snowflake-arctic-embed-l-v2.0_ids.json",
+  "query_prefix": "query: ",
+  "max_seq_length": 512,
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint5b_snow_cb15",
+  "trials": [
+    {"label": "w0.25_cb1.5", "w_bm25": 0.75, "w_sem": 0.25, "cb_threshold": 1.5},
+    {"label": "w0.30_cb1.5", "w_bm25": 0.70, "w_sem": 0.30, "cb_threshold": 1.5},
+    {"label": "w0.35_cb1.5", "w_bm25": 0.65, "w_sem": 0.35, "cb_threshold": 1.5},
+    {"label": "w0.40_cb1.5", "w_bm25": 0.60, "w_sem": 0.40, "cb_threshold": 1.5}
+  ]
+}

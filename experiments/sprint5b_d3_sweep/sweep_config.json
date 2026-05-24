@@ -1,0 +1,16 @@
+{
+  "run_id": "sprint5b_d3_sweep",
+  "model_dir": "/home/nick/Projects/fppc-tuned-embeddings/data/models/s3-d3-mnrl-conclusion-lr1e6",
+  "sem_npy": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint3_s3-d3-mnrl-conclusion-lr1e6_qa_text.npy",
+  "sem_ids_json": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint3_s3-d3-mnrl-conclusion-lr1e6_ids.json",
+  "query_prefix": "query: ",
+  "max_seq_length": 512,
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint5b_d3_sweep",
+  "trials": [
+    {"label": "w0.30_cb1.3", "w_bm25": 0.70, "w_sem": 0.30, "cb_threshold": 1.3},
+    {"label": "w0.40_cb1.3", "w_bm25": 0.60, "w_sem": 0.40, "cb_threshold": 1.3},
+    {"label": "w0.50_cb1.3", "w_bm25": 0.50, "w_sem": 0.50, "cb_threshold": 1.3},
+    {"label": "w0.60_cb1.3", "w_bm25": 0.40, "w_sem": 0.60, "cb_threshold": 1.3},
+    {"label": "w0.70_cb1.3", "w_bm25": 0.30, "w_sem": 0.70, "cb_threshold": 1.3}
+  ]
+}

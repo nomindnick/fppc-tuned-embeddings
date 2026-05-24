@@ -1,0 +1,16 @@
+{
+  "run_id": "sprint5_f2_009stock",
+  "fusion_engine": "LocalCitationScoreFusion",
+  "model_dir": "/home/nick/Projects/fppc-tuned-embeddings/data/models/s3-f2-lora-r16-lr1e5",
+  "sem_npy": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint3_s3-f2-lora-r16-lr1e5_qa_text.npy",
+  "sem_ids_json": "/home/nick/Projects/fppc-tuned-embeddings/data/indexes/corpus_embeddings_sprint3_s3-f2-lora-r16-lr1e5_ids.json",
+  "query_prefix": "query: ",
+  "doc_prefix": "",
+  "max_seq_length": 512,
+  "cb_threshold": 1.3,
+  "w_bm25": 0.4,
+  "w_sem": 0.6,
+  "semantic_only_path": false,
+  "experiment_dir": "/home/nick/Projects/fppc-tuned-embeddings/experiments/sprint5_f2_009stock",
+  "notes": "Sprint 5A: f2 LoRA fine-tune in 009 fusion (stock knobs). Ensemble candidate with different topic-shape than d3."
+}
